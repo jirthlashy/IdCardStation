@@ -1,0 +1,21 @@
+{
+  "name": "thai-id-intake",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure Thai ID SmartCard intake workflow using Kafka, a station reader agent, backend coordinator, and nurse iPad webapp.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev -w @thai-id-intake/backend",
+    "dev:reader": "npm run dev -w @thai-id-intake/reader-agent",
+    "dev:nurse": "npm run dev -w @thai-id-intake/nurse-webapp",
+    "lint": "tsc --noEmit --pretty",
+    "build": "npm run build --workspaces"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

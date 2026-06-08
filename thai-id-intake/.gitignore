@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+dev-server.log
+dev-server.err.log
+
+
+# Sensitive local intake data
+card-reads/
+pending-reads/
+reader-agent-logs/
+*.card.json
+*.photo.txt
