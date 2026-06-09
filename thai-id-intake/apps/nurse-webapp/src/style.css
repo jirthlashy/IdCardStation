@@ -18,6 +18,25 @@ body {
   gap: 16px;
 }
 
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #8a3030;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.connection.online {
+  background: #1d6b4f;
+}
+
 h1,
 h2,
 p {
@@ -109,11 +128,13 @@ dd {
 
 @media (max-width: 560px) {
   .toolbar,
-  .patient-result {
+  .patient-result,
+  .actions {
     grid-template-columns: 1fr;
   }
 
-  .toolbar {
+  .toolbar,
+  .actions {
     display: grid;
   }
 

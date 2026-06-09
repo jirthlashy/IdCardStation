@@ -9,6 +9,7 @@ let currentRequest: any;
 let result: any;
 let resultStream: EventSource | undefined;
 let tickTimer: number | undefined;
+let connected = false;
 
 function render() {
   if (!app) return;
@@ -19,15 +20,18 @@ function render() {
           <h1>Thai ID Intake</h1>
           <p>Station A01 secure scan request</p>
         </div>
-        <button id="scan">Scan ID Card</button>
+        <div class="actions">
+          <div class="connection ${connected ? "online" : "offline"}">${connected ? "Connected" : "Offline"}</div>
+          <button id="scan">Scan ID Card</button>
+        </div>
       </section>
+      ${result ? resultHtml() : ""}
       <section class="status">
         <div class="label">Status</div>
         <div class="value">${state}</div>
         <div class="code">${currentRequest?.turnCode ?? "-----"}</div>
         <p>${statusText()}</p>
       </section>
-      ${result ? resultHtml() : ""}
       ${currentRequest && !result ? `<button id="cancel" class="secondary">Cancel</button>` : ""}
       ${currentRequest && result ? `<button id="wrong-patient" class="secondary">Wrong Patient / Not Mine</button>` : ""}
     </main>
@@ -80,17 +84,25 @@ async function createRequest() {
   state = "waiting";
   result = undefined;
   render();
-  const response = await fetch(`${backendUrl}/api/scan-requests`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nurseId: "demo-nurse", stationId: "A01", deviceSessionId: localStorage.getItem("deviceSessionId") ?? undefined })
-  });
-  currentRequest = await response.json();
-  state = currentRequest.status === "queued" ? "queued" : "waiting";
-  localStorage.setItem("deviceSessionId", currentRequest.deviceSessionId);
-  subscribeToPrivateResult(currentRequest.deviceSessionId);
-  startTicker();
-  render();
+  try {
+    const response = await fetch(`${backendUrl}/api/scan-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nurseId: "demo-nurse", stationId: "A01", deviceSessionId: localStorage.getItem("deviceSessionId") ?? undefined })
+    });
+    connected = response.ok;
+    if (!response.ok) throw new Error("scan request failed");
+    currentRequest = await response.json();
+    state = currentRequest.status === "queued" ? "queued" : "waiting";
+    localStorage.setItem("deviceSessionId", currentRequest.deviceSessionId);
+    subscribeToPrivateResult(currentRequest.deviceSessionId);
+    startTicker();
+    render();
+  } catch {
+    connected = false;
+    state = "failed";
+    render();
+  }
 }
 
 function startTicker() {
@@ -113,15 +125,31 @@ function startTicker() {
 function subscribeToPrivateResult(deviceSessionId: string) {
   resultStream?.close();
   resultStream = new EventSource(`${backendUrl}/api/scan-results/${deviceSessionId}/events`);
+  resultStream.addEventListener("connected", () => {
+    connected = true;
+    render();
+  });
   resultStream.addEventListener("scan-result", (event) => {
+    connected = true;
     result = JSON.parse((event as MessageEvent).data);
     state = "received";
     render();
   });
   resultStream.onerror = () => {
+    connected = false;
     if (state !== "received") state = "failed";
     render();
   };
+}
+
+async function checkSystemConnection() {
+  try {
+    const response = await fetch(`${backendUrl}/health`, { cache: "no-store" });
+    connected = response.ok;
+  } catch {
+    connected = false;
+  }
+  render();
 }
 
 async function cancelRequest() {
@@ -158,4 +186,4 @@ async function wrongPatientRequest() {
   render();
 }
 
-render();
+void checkSystemConnection();
