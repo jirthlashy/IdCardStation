@@ -45,16 +45,23 @@ function statusText() {
 
 function resultHtml() {
   const card = result.card;
+  const photo = card.photoAsBase64Uri
+    ? `<img class="id-photo" src="${card.photoAsBase64Uri}" alt="Thai ID card portrait" />`
+    : `<div class="id-photo placeholder">No photo</div>`;
+
   return `
     <section class="result">
       <h2>Patient Autofill</h2>
-      <dl>
-        <dt>Citizen ID</dt><dd>${card.citizenId ?? ""}</dd>
-        <dt>Thai name</dt><dd>${card.fullNameTh ?? ""}</dd>
-        <dt>English name</dt><dd>${card.fullNameEn ?? ""}</dd>
-        <dt>Date of birth</dt><dd>${card.dateOfBirth ?? ""}</dd>
-        <dt>Address</dt><dd>${card.address ?? ""}</dd>
-      </dl>
+      <div class="patient-result">
+        ${photo}
+        <dl>
+          <dt>Citizen ID</dt><dd>${card.citizenId ?? ""}</dd>
+          <dt>Thai name</dt><dd>${card.fullNameTh ?? ""}</dd>
+          <dt>English name</dt><dd>${card.fullNameEn ?? ""}</dd>
+          <dt>Date of birth</dt><dd>${card.dateOfBirth ?? ""}</dd>
+          <dt>Address</dt><dd>${card.address ?? ""}</dd>
+        </dl>
+      </div>
     </section>
   `;
 }

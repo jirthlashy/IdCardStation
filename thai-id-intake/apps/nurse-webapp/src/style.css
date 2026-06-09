@@ -70,6 +70,7 @@ dl {
   display: grid;
   grid-template-columns: 140px 1fr;
   gap: 10px;
+  min-width: 0;
 }
 
 dt {
@@ -78,4 +79,45 @@ dt {
 
 dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.patient-result {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 18px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.id-photo {
+  width: 128px;
+  height: 160px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #eef1f4;
+  object-fit: cover;
+}
+
+.id-photo.placeholder {
+  display: grid;
+  place-items: center;
+  color: #687385;
+  font-size: 14px;
+}
+
+@media (max-width: 560px) {
+  .toolbar,
+  .patient-result {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    display: grid;
+  }
+
+  dl {
+    grid-template-columns: 112px 1fr;
+  }
 }

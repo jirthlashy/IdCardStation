@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { EventEmitter } from "node:events";
-import { Kafka } from "kafkajs";
+import { Kafka, Partitioners } from "kafkajs";
 import { customAlphabet, nanoid } from "nanoid";
 import {
   AuditEvent,
@@ -22,7 +22,8 @@ const ttlSeconds = Number(process.env.SCAN_REQUEST_TTL_SECONDS ?? 90);
 const turnCode = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 5);
 
 const kafka = new Kafka({ clientId: "thai-id-intake-backend", brokers });
-const producer = kafka.producer();
+const admin = kafka.admin();
+const producer = kafka.producer({ createPartitioner: Partitioners.LegacyPartitioner });
 const consumer = kafka.consumer({ groupId: "thai-id-intake-backend" });
 const app = express();
 const requests = new Map<string, ScanRequest>();
@@ -208,27 +209,48 @@ async function handleCardRead(event: ReaderCardReadEvent) {
     card: read.card
   };
   await publishJson(KAFKA_TOPICS.privateScanResult(request.deviceSessionId), envelope({ eventType: "scan.result.private", payload: result, requestId: request.requestId, stationId: request.stationId, deviceSessionId: request.deviceSessionId }), request.deviceSessionId);
+  privateResults.emit(request.deviceSessionId, result);
   await publishStationStatus(request, "idle", "Scan delivered privately");
   await audit({ action: "card_scan_received", requestId: request.requestId, stationId: request.stationId, deviceSessionId: request.deviceSessionId, occurredAt: nowIso() });
   await audit({ action: "result_delivered", requestId: request.requestId, stationId: request.stationId, deviceSessionId: request.deviceSessionId, occurredAt: nowIso() });
 }
 
+async function ensureTopics() {
+  await admin.connect();
+  try {
+    const existingTopics = new Set(await admin.listTopics());
+    const topics = [
+      { topic: KAFKA_TOPICS.scanRequests, numPartitions: 1, replicationFactor: 1 },
+      { topic: KAFKA_TOPICS.readerCardRead, numPartitions: 1, replicationFactor: 1 },
+      { topic: KAFKA_TOPICS.scanRejections, numPartitions: 1, replicationFactor: 1 },
+      { topic: KAFKA_TOPICS.auditScanEvents, numPartitions: 1, replicationFactor: 1 }
+    ].filter(({ topic }) => !existingTopics.has(topic));
+
+    if (topics.length === 0) {
+      return;
+    }
+
+    await admin.createTopics({
+      waitForLeaders: true,
+      topics
+    });
+  } finally {
+    await admin.disconnect();
+  }
+}
+
 async function startKafka() {
+  await ensureTopics();
   await producer.connect();
   await consumer.connect();
   await consumer.subscribe({ topic: KAFKA_TOPICS.readerCardRead, fromBeginning: false });
   await consumer.subscribe({ topic: KAFKA_TOPICS.scanRejections, fromBeginning: false });
-  await consumer.subscribe({ topic: /^scan-result\..+$/, fromBeginning: false });
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       if (!message.value) return;
       const parsed = JSON.parse(message.value.toString());
       if (topic === KAFKA_TOPICS.readerCardRead) {
         await handleCardRead(parsed as ReaderCardReadEvent);
-      }
-      if (topic.startsWith("scan-result.")) {
-        const deviceSessionId = topic.slice("scan-result.".length);
-        privateResults.emit(deviceSessionId, parsed.payload as PrivateScanResult);
       }
       if (topic === KAFKA_TOPICS.scanRejections) {
         const rejected = parsed as ScanRejectedEvent;

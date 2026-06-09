@@ -7,6 +7,10 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@thai-id-intake/shared-types": ["packages/shared-types/src/index.ts"]
+    }
   }
 }
