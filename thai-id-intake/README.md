@@ -1,81 +1,86 @@
 # Thai ID Intake
 
-Secure Thai ID SmartCard intake workflow for a station PC, backend coordinator, nurse iPad webapp, and Kafka event backbone.
+Secure Thai ID SmartCard intake for a nurse iPad, A01 station display, Windows reader agent, backend coordinator, and Kafka event backbone.
 
-Kafka is the core of this project. The backend owns scan authorization and private routing, while Kafka carries scan requests, station status, reader events, private scan results, rejections, and audit events.
+Kafka carries the event flow. The backend owns scan authorization, station queue state, cooldown, and private result routing. The 5-character code is for human confirmation only; the system routes by `requestId + deviceSessionId`.
 
-## Structure
+## Project Structure
 
 ```text
 thai-id-intake/
   apps/
-    reader-agent/   # Windows station PC service for goomgumx Thai ID SmartCard reads
-    backend/        # Scan transaction authority and Kafka coordinator
-    nurse-webapp/   # iPad webapp for one-tap nurse scan requests
+    backend/          # Scan request API, station queue/state machine, Kafka coordinator
+    reader-agent/     # Windows PC/SC SmartCard reader service
+    nurse-webapp/     # iPad scan request and private result UI
+    station-display/  # A01 display for safe code/status only
   packages/
-    shared-types/   # Shared TypeScript contracts and Kafka topic names
+    shared-types/     # Shared TypeScript contracts and Kafka topic helpers
 ```
 
-## Secure Scan Flow
+## Current Scan Flow
 
 1. Nurse taps `Scan ID Card` on the iPad.
-2. Backend creates a scan request with `requestId`, `deviceSessionId`, station ID, short turn code, and expiry.
-3. Kafka publishes safe station status so the station PC shows only code/status.
-4. Nurse compares the iPad code with the station PC code.
-5. Reader agent reads the inserted card and publishes a card-read event to Kafka.
-6. Backend validates the active request and publishes the full card result only to `scan-result.{deviceSessionId}`.
-7. Nurse webapp autofills the patient record for that private iPad session.
+2. Backend creates a request with `requestId`, `deviceSessionId`, `stationId`, 5-character `turnCode`, and expiry.
+3. If the station is busy or cooling down, the request is queued. Queued requests do not burn scan time.
+4. Station display shows only the active turn code, queue depth, status, and reader state.
+5. Nurse compares the iPad code with the station display code.
+6. Reader agent reads the inserted Thai ID card for the active request.
+7. Backend validates the active `requestId`, looks up `deviceSessionId`, and publishes the full card result only to that private iPad session.
+8. Station moves `delivered -> cooldown` for 3 seconds, then activates the next queued request with a fresh expiry timer or returns to `neutral`.
 
-## Kafka Docker
+Station lifecycle:
 
-Start local Kafka and the local testing UI:
+```text
+neutral -> active -> reading -> delivered -> cooldown -> neutral/next queued request
+```
+
+Exception states include `queued`, `canceled`, `expired`, `failed`, and `misrouted`.
+
+## Local Kafka
+
+Start Kafka and local Kafka UI:
 
 ```powershell
 docker compose up -d kafka kafka-ui
 ```
 
-Default broker:
+Apps connect to:
 
 ```env
 KAFKA_BROKERS=localhost:9092
 ```
 
-Kafbat Kafka UI is available for local testing at:
+Kafka UI for local testing:
 
 ```text
 http://localhost:8080
 ```
 
-The UI service uses `kafbat/kafka-ui:main` and is for development/testing only. Remove it from deployment environments.
-
-Stop Kafka:
-
-```powershell
-docker compose down
-```
+`kafbat/kafka-ui:main` is for testing only and should be removed from deployment.
 
 ## Kafka Topics
 
-| Topic | Producer | Consumer | PII allowed |
-| --- | --- | --- | --- |
-| `scan.requests` | backend | reader-agent | No |
-| `station.status.{stationId}` | backend | station display/reader-agent | No |
-| `reader.status.{stationId}` | reader-agent | backend/station monitor | No |
-| `reader.card-read` | reader-agent | backend | Yes, backend-consumed only |
-| `scan-result.{deviceSessionId}` | backend | private iPad session bridge | Yes, private only |
-| `scan.rejections` | nurse webapp/backend | backend | No full card payload |
-| `audit.scan-events` | backend | audit storage | No raw SmartCard/photo data |
+| Topic | PII | Purpose |
+| --- | --- | --- |
+| `scan.requests` | No | Backend announces the active station request to reader-agent |
+| `station.status.{stationId}` | No | Safe station code/status/queue/cooldown updates |
+| `reader.status.{stationId}` | No | Safe reader lifecycle and error state |
+| `reader.card-read` | Yes | Reader-to-backend card payload for active request only |
+| `scan-result.{deviceSessionId}` | Yes | Private scan result for one iPad session |
+| `scan.rejections` | No card payload | Cancel and wrong-patient events |
+| `audit.scan-events` | No raw card/photo | Audit event stream |
 
-Station-wide topics must never contain citizen ID, full names, address, photo, laser number, or raw SmartCard output.
+Never put full card data, address, photo, citizen ID, or raw SmartCard output on station-wide topics.
 
 ## Environment
 
-Copy `.env.example` to `.env` in local development and adjust as needed.
+Copy `.env.example` to `.env` and adjust values.
 
 ```env
 KAFKA_BROKERS=localhost:9092
 BACKEND_PORT=3001
 SCAN_REQUEST_TTL_SECONDS=90
+STATION_COOLDOWN_MS=3000
 STATION_ID=A01
 READER_ID=A01-PC-01
 INSERT_CARD_DELAY_MS=500
@@ -83,7 +88,7 @@ READ_TIMEOUT_MS=5000
 VITE_BACKEND_URL=http://localhost:3001
 ```
 
-## Development Commands
+## Development
 
 Install dependencies:
 
@@ -91,77 +96,89 @@ Install dependencies:
 npm install
 ```
 
-Run backend:
+Run services:
 
 ```powershell
 npm run dev:backend
-```
-
-Run reader agent:
-
-```powershell
 npm run dev:reader
-```
-
-Run nurse webapp:
-
-```powershell
 npm run dev:nurse
+npm run dev:station
 ```
 
-Do not run `npm run build` unless the project owner approves it.
+Default local URLs:
+
+```text
+Backend:         http://localhost:3001
+Nurse webapp:   Vite-assigned port, commonly http://localhost:5173
+Station display: http://localhost:3002
+Kafka UI:       http://localhost:8080
+```
+
+Do not run `npm run build` without project-owner approval.
 
 ## App Responsibilities
 
 ### Backend
 
-- Creates scan requests and short turn codes.
-- Maintains active request state per station.
-- Publishes safe station status to Kafka.
-- Consumes `reader.card-read`.
-- Validates request expiry and station binding.
-- Publishes full scan result only to `scan-result.{deviceSessionId}`.
-- Records audit events for request, scan, delivery, rejection, expiry, and errors.
+- Creates scan requests and 5-character turn codes.
+- Maintains one active request per station plus queued requests.
+- Starts the scan expiry timer only when a request becomes active on the station.
+- Publishes safe station status with expiry, queue depth, and cooldown.
+- Routes full card results by `requestId + deviceSessionId`.
+- Handles cancel, wrong-patient/misroute, expiry, delivery, and audit events.
 
 ### Reader Agent
 
 - Runs on the Windows station PC.
-- Uses `goomgumx/thai-id-card-reader` / PCSC integration points.
-- Consumes active scan request events.
-- Shows only station code/status.
-- Publishes normalized card reads to Kafka.
-- Debounces duplicate card reads.
-- Logs only non-sensitive status.
+- Uses `goomgumx/thai-id-card-reader` through PC/SC and `pcsclite`.
+- Consumes active `scan.requests`.
+- Publishes safe reader status and full card reads to backend-consumed Kafka topics.
+- Clears active request on station lifecycle updates such as canceled, expired, delivered, cooldown, or neutral.
 
 ### Nurse Webapp
 
-- Provides one primary `Scan ID Card` action.
-- Shows the short turn code for visual comparison.
-- Receives private result delivery through a backend Kafka-backed bridge.
-- Autofills patient fields without an extra Submit tap.
-- Supports `Wrong Patient / Not Mine` rejection.
+- Creates scan requests from the iPad.
+- Shows the human turn code and queued/waiting/expired/result states.
+- Receives private card results through backend SSE backed by Kafka.
+- Displays patient fields and `photoAsBase64Uri` only in the private result view.
+- Provides `Cancel` before result and `Wrong Patient / Not Mine` after result.
 
-## Windows SmartCard Reader Troubleshooting
+### Station Display
 
-Use Node.js 20.x on Windows x64. If `pcsclite` fails with `ERR_DLOPEN_FAILED` or `not a valid Win32 application`, verify the runtime:
+- Shows only safe station information: code, status, queue depth, expiry/cooldown countdown, and reader status.
+- Receives status through backend SSE backed by Kafka.
+- Never displays citizen ID, patient name, address, photo, or raw card data.
+
+## SmartCard Reader Notes
+
+The reader dependency is installed from:
+
+```text
+github:goomgumx/thai-id-card-reader
+```
+
+The app imports the package library entry directly because the package's declared `main` currently points at an older/demo path that expects `config.json`.
+
+If `pcsclite` cannot load, verify runtime:
 
 ```powershell
 node -p "process.platform + ' ' + process.arch + ' node ' + process.version + ' abi ' + process.versions.modules"
+node -e "require('pcsclite'); console.log('pcsclite loaded')"
 ```
 
-Install a project-local `node-gyp` and point npm to it:
+Rebuild `pcsclite` with the Visual Studio x64 environment:
 
 ```powershell
 npm install --save-dev node-gyp@latest
 ```
 
-Create `.npmrc`:
+`.npmrc` should contain:
 
 ```ini
 node_gyp=./node_modules/node-gyp/bin/node-gyp.js
 ```
 
-Rebuild from a Visual Studio x64 build environment:
+Then run:
 
 ```powershell
 cmd.exe /d /s /c "call ""C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"" && set npm_config_node_gyp=%CD%\node_modules\node-gyp\bin\node-gyp.js&& npm rebuild pcsclite"
@@ -176,10 +193,9 @@ Start-Service SCardSvr
 
 ## Security Rules
 
-- No full card data on station-wide Kafka topics.
-- No full card data on station PC display.
-- Full scan payload goes only to the requesting nurse/device session.
-- Avoid logging citizen ID, full address, photo base64, laser/back number, or raw SmartCard output.
-- Expire scan requests quickly, defaulting to 90 seconds.
-- Wrong-patient handling marks the scan rejected or misrouted and requires rescan under the correct code.
-- OCR remains a manual fallback path and must follow the same private delivery rule.
+- The 5-character code is not a routing secret; it is only for human visual confirmation.
+- Backend routes private results by `requestId + deviceSessionId`.
+- Station display and station-wide Kafka topics must remain PII-free.
+- Full card payload and photo go only to `scan-result.{deviceSessionId}` and the private nurse iPad result bridge.
+- Do not log citizen ID, full address, photo base64, laser/back number, or raw SmartCard output.
+- OCR remains a future fallback path and must follow the same private delivery rule.

@@ -1,6 +1,6 @@
 import "./style.css";
 
-type ScanState = "idle" | "waiting" | "reading" | "received" | "expired" | "failed";
+type ScanState = "idle" | "queued" | "waiting" | "reading" | "received" | "expired" | "failed";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:3001";
 const app = document.querySelector<HTMLDivElement>("#root");
@@ -8,6 +8,7 @@ let state: ScanState = "idle";
 let currentRequest: any;
 let result: any;
 let resultStream: EventSource | undefined;
+let tickTimer: number | undefined;
 
 function render() {
   if (!app) return;
@@ -27,20 +28,29 @@ function render() {
         <p>${statusText()}</p>
       </section>
       ${result ? resultHtml() : ""}
-      ${currentRequest ? `<button id="reject" class="secondary">Wrong Patient / Not Mine</button>` : ""}
+      ${currentRequest && !result ? `<button id="cancel" class="secondary">Cancel</button>` : ""}
+      ${currentRequest && result ? `<button id="wrong-patient" class="secondary">Wrong Patient / Not Mine</button>` : ""}
     </main>
   `;
   document.querySelector("#scan")?.addEventListener("click", createRequest);
-  document.querySelector("#reject")?.addEventListener("click", rejectRequest);
+  document.querySelector("#cancel")?.addEventListener("click", cancelRequest);
+  document.querySelector("#wrong-patient")?.addEventListener("click", wrongPatientRequest);
 }
 
 function statusText() {
   if (state === "idle") return "Tap once to create a private scan request.";
-  if (state === "waiting") return "Compare this code with the station PC, then insert the card.";
+  if (state === "queued") return `Queued for station. Position ${currentRequest?.queuePosition ?? "-"}. Timer starts when this code appears at the station.`;
+  if (state === "waiting") return `Compare this code with the station PC, then insert the card. ${expiryText()}`;
   if (state === "received") return "Private result received for this iPad session.";
   if (state === "expired") return "Request expired. Tap scan again if still needed.";
   if (state === "failed") return "Scan failed. Retry or use the fallback workflow.";
   return "Reader is working.";
+}
+
+function expiryText() {
+  if (!currentRequest?.expiresAt) return "";
+  const remainingSeconds = Math.max(0, Math.ceil((Date.parse(currentRequest.expiresAt) - Date.now()) / 1000));
+  return remainingSeconds > 0 ? `Expires in ${remainingSeconds}s.` : "Expired.";
 }
 
 function resultHtml() {
@@ -76,9 +86,28 @@ async function createRequest() {
     body: JSON.stringify({ nurseId: "demo-nurse", stationId: "A01", deviceSessionId: localStorage.getItem("deviceSessionId") ?? undefined })
   });
   currentRequest = await response.json();
+  state = currentRequest.status === "queued" ? "queued" : "waiting";
   localStorage.setItem("deviceSessionId", currentRequest.deviceSessionId);
   subscribeToPrivateResult(currentRequest.deviceSessionId);
+  startTicker();
   render();
+}
+
+function startTicker() {
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = window.setInterval(() => {
+    if (!currentRequest || result) return;
+    if (!currentRequest.expiresAt) {
+      render();
+      return;
+    }
+    if (Date.parse(currentRequest.expiresAt) <= Date.now()) {
+      state = "expired";
+      resultStream?.close();
+      resultStream = undefined;
+    }
+    render();
+  }, 1000);
 }
 
 function subscribeToPrivateResult(deviceSessionId: string) {
@@ -95,7 +124,24 @@ function subscribeToPrivateResult(deviceSessionId: string) {
   };
 }
 
-async function rejectRequest() {
+async function cancelRequest() {
+  if (!currentRequest) return;
+  await fetch(`${backendUrl}/api/scan-requests/${currentRequest.requestId}/rejections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: "cancel" })
+  });
+  state = "idle";
+  currentRequest = undefined;
+  result = undefined;
+  resultStream?.close();
+  resultStream = undefined;
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = undefined;
+  render();
+}
+
+async function wrongPatientRequest() {
   if (!currentRequest) return;
   await fetch(`${backendUrl}/api/scan-requests/${currentRequest.requestId}/rejections`, {
     method: "POST",
@@ -107,6 +153,8 @@ async function rejectRequest() {
   result = undefined;
   resultStream?.close();
   resultStream = undefined;
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = undefined;
   render();
 }
 

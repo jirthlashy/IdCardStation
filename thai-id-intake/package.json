@@ -11,6 +11,7 @@
     "dev:backend": "npm run dev -w @thai-id-intake/backend",
     "dev:reader": "npm run dev -w @thai-id-intake/reader-agent",
     "dev:nurse": "npm run dev -w @thai-id-intake/nurse-webapp",
+    "dev:station": "npm run dev -w @thai-id-intake/station-display",
     "lint": "tsc --noEmit --pretty",
     "build": "npm run build --workspaces"
   },

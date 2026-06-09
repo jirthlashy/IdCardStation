@@ -1,0 +1,99 @@
+%% Current implementation status for thai-id-intake
+%% Shows what is implemented now and what is still pending.
+
+flowchart TD
+  Nurse["Nurse iPad\napps/nurse-webapp"]
+  Backend["Backend coordinator\napps/backend"]
+  Kafka["Apache Kafka 4.3.0\nDocker container"]
+  KafkaUI["Kafbat Kafka UI\nlocal testing only"]
+  Reader["Reader agent\napps/reader-agent"]
+  Station["Station display\napps/station-display"]
+  Shared["Shared contracts\npackages/shared-types"]
+  SmartCard["Thai ID SmartCard reader\ngoomgumx/thai-id-card-reader + pcsclite"]
+
+  Nurse -->|"POST /api/scan-requests\nnurseId + stationId + deviceSessionId"| Backend
+  Backend -->|"returns requestId + deviceSessionId\n5-char turnCode + expiry"| Nurse
+  Backend -->|"produces scan.requests"| Kafka
+  Kafka -->|"consumes scan.requests"| Reader
+  Backend -->|"produces station.status.A01\nsafe code/status only"| Kafka
+  Reader -->|"produces reader.status.A01\nsafe reader state only"| Kafka
+  Kafka -->|"backend consumes reader.status.A01"| Backend
+  Backend -->|"SSE /api/stations/A01/status/events"| Station
+  Station -->|"shows only turnCode/status\nno PII"| StationSafe["Safe station screen"]
+
+  SmartCard -->|"card inserted/read"| Reader
+  Reader -->|"produces reader.card-read\nrequestId + stationId + card payload"| Kafka
+  Kafka -->|"backend consumes reader.card-read"| Backend
+  Backend -->|"validates active requestId\nlooks up deviceSessionId"| Route["Private routing decision"]
+  Route -->|"produces scan-result.deviceSessionId\nfull card payload + photo"| Kafka
+  Route -->|"SSE /api/scan-results/deviceSessionId/events"| Nurse
+
+  Nurse -->|"Cancel"| Backend
+  Backend -->|"marks canceled\npublishes safe station canceled status"| Kafka
+  Backend -->|"SSE station canceled update"| Station
+
+  Shared -.-> Nurse
+  Shared -.-> Backend
+  Shared -.-> Reader
+  Shared -.-> Station
+  KafkaUI -.-> Kafka
+
+  subgraph Implemented["Implemented now"]
+    direction TB
+    I1["Monorepo apps + shared-types"]
+    I2["Kafka Docker + Kafka UI"]
+    I3["Scan request API"]
+    I4["5-character human turn code"]
+    I5["Kafka topics and envelopes"]
+    I6["Private result delivery by deviceSessionId"]
+    I7["Reader package integration + pcsclite rebuild"]
+    I8["Nurse result UI with ID photo"]
+    I9["Station display safe code/status UI"]
+    I10["Cancel updates station status"]
+    I11["Station state machine\nneutral -> active -> reading -> delivered -> cooldown"]
+    I12["Queued requests per station\none active code at a time"]
+    I13["3-second cooldown\nbefore next code or neutral"]
+    I14["Nurse wrong-patient action\nafter private result"]
+    I15["Queued timers do not burn\nfresh expiry starts on activation"]
+
+    I1 --> I2 --> I3 --> I4 --> I5 --> I6 --> I7 --> I8 --> I9 --> I10 --> I11 --> I12 --> I13 --> I14 --> I15
+  end
+
+  subgraph Pending["Not implemented yet"]
+    direction TB
+    P1["Durable station queue persistence"]
+    P2["Explicit card removed event\nfrom reader hardware"]
+    P3["Reader-side hardware lockout\nduring cooldown"]
+    P4["Full nurse queue activation push\nwhen queued request becomes active"]
+    P5["Production-grade expiry/cooldown UX polish"]
+    P6["Persisted wrong-patient review workflow"]
+    P7["Durable database/audit storage"]
+    P8["Auth for nurse/device/session SSE"]
+    P9["Production Kafka security: SASL/TLS/ACLs"]
+    P10["Automated tests and e2e simulation"]
+    P11["OCR fallback integration"]
+    P12["Multi-station support beyond default A01"]
+
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9 --> P10 --> P11 --> P12
+  end
+
+  subgraph SecurityRule["Core security rule"]
+    HumanCode["5-character code\nhuman visual confirmation only"]
+    SystemRoute["requestId + deviceSessionId\nactual system routing"]
+    NoStationPII["Station-wide topics/display\nmust never contain card PII/photo"]
+  end
+
+  HumanCode --> SystemRoute
+  SystemRoute --> NoStationPII
+
+  classDef app fill:#e8eef8,stroke:#315f9a,color:#111c2c;
+  classDef infra fill:#f0e8ff,stroke:#7154a6,color:#211438;
+  classDef safe fill:#dff3ea,stroke:#267355,color:#10251c;
+  classDef pending fill:#fde7e9,stroke:#a63c49,color:#351014;
+  classDef implemented fill:#fff1d6,stroke:#9b6b16,color:#2b1d05;
+
+  class Nurse,Backend,Reader,Station,Shared app;
+  class Kafka,KafkaUI,SmartCard infra;
+  class StationSafe,Route,HumanCode,SystemRoute,NoStationPII safe;
+  class P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12 pending;
+  class I1,I2,I3,I4,I5,I6,I7,I8,I9,I10,I11,I12,I13,I14,I15 implemented;

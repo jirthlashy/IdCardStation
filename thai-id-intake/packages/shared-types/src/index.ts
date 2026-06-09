@@ -10,13 +10,27 @@ export const KAFKA_TOPICS = {
 
 export type ScanRequestStatus =
   | "created"
+  | "queued"
   | "active"
   | "reading"
   | "fulfilled"
+  | "canceled"
   | "rejected"
   | "misrouted"
   | "expired"
   | "failed";
+
+export type StationLifecycleStatus =
+  | "neutral"
+  | "queued"
+  | "active"
+  | "reading"
+  | "delivered"
+  | "cooldown"
+  | "canceled"
+  | "expired"
+  | "failed"
+  | "misrouted";
 
 export type ReaderState =
   | "starting"
@@ -74,7 +88,8 @@ export interface ScanRequest {
   turnCode: string;
   status: ScanRequestStatus;
   createdAt: string;
-  expiresAt: string;
+  activatedAt?: string;
+  expiresAt?: string;
 }
 
 export interface CreateScanRequestInput {
@@ -88,15 +103,21 @@ export interface CreateScanRequestResponse {
   deviceSessionId: string;
   stationId: string;
   turnCode: string;
-  expiresAt: string;
+  activatedAt?: string;
+  expiresAt?: string;
+  status: ScanRequestStatus;
+  queuePosition: number;
 }
 
 export interface SafeStationStatus {
   stationId: string;
   activeRequestId?: string;
   turnCode?: string;
-  status: "idle" | "active" | "reading" | "expired" | "error";
+  status: StationLifecycleStatus;
   readerState?: ReaderState;
+  expiresAt?: string;
+  cooldownUntil?: string;
+  queueDepth: number;
   message?: string;
   updatedAt: string;
 }
@@ -132,7 +153,7 @@ export interface ScanRejection {
   requestId: string;
   stationId: string;
   deviceSessionId: string;
-  reason: "wrong_patient" | "not_mine" | "other";
+  reason: "wrong_patient" | "not_mine" | "cancel" | "other";
   rejectedAt: string;
 }
 
@@ -143,6 +164,7 @@ export interface AuditEvent {
     | "card_scan_received"
     | "result_delivered"
     | "scan_rejected"
+    | "scan_canceled"
     | "scan_expired"
     | "read_error"
     | "misrouted";

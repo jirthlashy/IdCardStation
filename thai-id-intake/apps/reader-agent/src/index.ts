@@ -6,6 +6,7 @@ import {
   ReaderCardRead,
   ReaderStatus,
   ScanRequestCreatedEvent,
+  StationStatusEvent,
   ThaiIdCardPayload
 } from "@thai-id-intake/shared-types";
 
@@ -118,6 +119,7 @@ async function publishCardRead(card: ThaiIdCardPayload) {
     return;
   }
 
+  await publishReaderStatus("reading", "Card read complete; sending to backend");
   lastCitizenId = card.citizenId;
   lastReadAt = Date.now();
   const payload: ReaderCardRead = {
@@ -169,6 +171,7 @@ async function ensureTopics() {
     const topics = [
       { topic: KAFKA_TOPICS.scanRequests, numPartitions: 1, replicationFactor: 1 },
       { topic: KAFKA_TOPICS.readerCardRead, numPartitions: 1, replicationFactor: 1 },
+      { topic: KAFKA_TOPICS.stationStatus(stationId), numPartitions: 1, replicationFactor: 1 },
       { topic: KAFKA_TOPICS.readerStatus(stationId), numPartitions: 1, replicationFactor: 1 }
     ].filter(({ topic }) => !existingTopics.has(topic));
 
@@ -189,13 +192,25 @@ await ensureTopics();
 await producer.connect();
 await consumer.connect();
 await consumer.subscribe({ topic: KAFKA_TOPICS.scanRequests, fromBeginning: false });
+await consumer.subscribe({ topic: KAFKA_TOPICS.stationStatus(stationId), fromBeginning: false });
 await consumer.run({
-  eachMessage: async ({ message }) => {
+  eachMessage: async ({ topic, message }) => {
     if (!message.value) return;
-    const event = JSON.parse(message.value.toString()) as ScanRequestCreatedEvent;
-    if (event.payload.stationId !== stationId) return;
-    activeRequest = event.payload;
-    await publishReaderStatus("waiting_for_card", "Active request received");
+    const event = JSON.parse(message.value.toString());
+    if (topic === KAFKA_TOPICS.scanRequests) {
+      const requestEvent = event as ScanRequestCreatedEvent;
+      if (requestEvent.payload.stationId !== stationId) return;
+      activeRequest = requestEvent.payload;
+      await publishReaderStatus("waiting_for_card", "Active request received");
+    }
+    if (topic === KAFKA_TOPICS.stationStatus(stationId)) {
+      const stationEvent = event as StationStatusEvent;
+      const status = stationEvent.payload.status;
+      if (status === "canceled" || status === "expired" || status === "cooldown" || status === "neutral" || status === "delivered" || status === "misrouted") {
+        activeRequest = undefined;
+        await publishReaderStatus("waiting_for_request", `Station status ${status}`);
+      }
+    }
   }
 });
 
