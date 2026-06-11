@@ -21,12 +21,15 @@ thai-id-intake/
 
 1. Nurse taps `Scan ID Card` on the iPad.
 2. Backend creates a request with `requestId`, `deviceSessionId`, `stationId`, 5-character `turnCode`, and expiry.
-3. If the station is busy or cooling down, the request is queued. Queued requests do not burn scan time.
-4. Station display shows only the active turn code, queue depth, status, and reader state.
-5. Nurse compares the iPad code with the station display code.
-6. Reader agent reads the inserted Thai ID card for the active request.
-7. Backend validates the active `requestId`, looks up `deviceSessionId`, and publishes the full card result only to that private iPad session.
-8. Station moves `delivered -> cooldown` for 3 seconds, then activates the next queued request with a fresh expiry timer or returns to `neutral`.
+3. Nurse app pre-subscribes to safe station readiness. If the reader is offline, the scan button is disabled until heartbeat recovers.
+4. If the station is busy or cooling down, the request is queued. Queued requests do not burn scan time, but stale queued requests expire after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
+5. Station display shows only the active turn code, queue depth, active expiry/cooldown, status, and reader heartbeat state.
+6. Nurse compares the iPad code with the station display code.
+7. Reader agent reads the inserted Thai ID card for the active request.
+8. If a retryable read error happens, the same request stays active until its active TTL expires. Nurse and station show `Read failed, reinsert card`.
+9. Backend validates the active `requestId`, looks up `deviceSessionId`, and publishes the full card result only to that private iPad session.
+10. Nurse UI auto-clears private patient fields/photo after `RESULT_AUTO_CLEAR_SECONDS`.
+11. Station moves `delivered -> cooldown` for 3 seconds, then activates the next queued request with a fresh expiry timer or returns to `neutral`.
 
 Station lifecycle:
 
@@ -35,6 +38,8 @@ neutral -> active -> reading -> delivered -> cooldown -> neutral/next queued req
 ```
 
 Exception states include `queued`, `canceled`, `expired`, `failed`, and `misrouted`.
+
+Auth/session hardening is intentionally deferred until hospital nurseID and device-auth rules are known.
 
 ## Local Kafka
 
@@ -60,17 +65,24 @@ http://localhost:8080
 
 ## Kafka Topics
 
-| Topic | PII | Purpose |
-| --- | --- | --- |
-| `scan.requests` | No | Backend announces the active station request to reader-agent |
-| `station.status.{stationId}` | No | Safe station code/status/queue/cooldown updates |
-| `reader.status.{stationId}` | No | Safe reader lifecycle and error state |
-| `reader.card-read` | Yes | Reader-to-backend card payload for active request only |
-| `scan-result.{deviceSessionId}` | Yes | Private scan result for one iPad session |
-| `scan.rejections` | No card payload | Cancel and wrong-patient events |
-| `audit.scan-events` | No raw card/photo | Audit event stream |
+Kafka is the event backbone. Nurse iPads and the station display do not connect to Kafka directly; they connect to the backend through HTTP/SSE. The backend is the routing authority for private data.
 
-Never put full card data, address, photo, citizen ID, or raw SmartCard output on station-wide topics.
+| Topic | Producer | Consumer | Sensitive Data | Purpose |
+| --- | --- | --- | --- | --- |
+| `scan.requests` | Backend | Reader agent | No | Announces the one active request for a station. Contains `requestId`, `stationId`, `deviceSessionId`, 5-character `turnCode`, status, and timing metadata. The reader uses this to know which request is currently allowed to read. |
+| `station.status.{stationId}` | Backend | Reader agent, backend SSE bridge | No | Safe station-wide state such as active code, active expiry, cooldown, queue depth, canceled/expired/delivered states, and retry prompts. Example: `station.status.A01`. This topic must stay safe for public station screens. |
+| `reader.status.{stationId}` | Reader agent | Backend | No | Safe reader lifecycle events: heartbeat every `READER_HEARTBEAT_MS`, ready/offline, waiting for card, reading, card inserted/removed when available, and retryable read errors. Example: `reader.status.A01`. |
+| `reader.card-read` | Reader agent | Backend | Yes | Full card-read payload from the SmartCard reader for the active `requestId`. May contain citizen ID, name, address, date of birth, and `photoAsBase64Uri`. Backend validates the request before private delivery. |
+| `scan-result.{deviceSessionId}` | Backend | Backend private SSE bridge | Yes | Private result topic for exactly one iPad/device session. Contains normalized card data and photo after backend validates `requestId + deviceSessionId`. Example shape: `scan-result.{deviceSessionId}`. |
+| `scan.rejections` | Backend | Backend/audit flow | No card payload | Cancel and wrong-patient/misroute events. Contains request metadata and rejection reason, not card fields or photo. |
+| `audit.scan-events` | Backend | Audit tooling/Kafka UI during dev | No raw card/photo | Operational audit trail for request creation, activation, delivery, rejection, expiry, retryable read errors, duplicates, and misroutes. Keep raw PII out of this topic. |
+
+Sensitivity rules:
+
+- Station-wide topics are PII-free: `scan.requests`, `station.status.*`, and `reader.status.*`.
+- Private/PII topics are restricted to backend-controlled routing: `reader.card-read` and `scan-result.{deviceSessionId}`.
+- Never put full card data, address, photo, citizen ID, or raw SmartCard output on station-wide topics.
+- `scan.rejections` and `audit.scan-events` may reference request IDs and station IDs, but must not include raw card/photo data.
 
 ## Environment
 
@@ -85,7 +97,12 @@ STATION_ID=A01
 READER_ID=A01-PC-01
 INSERT_CARD_DELAY_MS=500
 READ_TIMEOUT_MS=5000
+READER_HEARTBEAT_MS=10000
+QUEUED_REQUEST_MAX_AGE_SECONDS=300
+RESULT_AUTO_CLEAR_SECONDS=120
 VITE_BACKEND_URL=http://localhost:3001
+VITE_STATION_ID=A01
+VITE_RESULT_AUTO_CLEAR_SECONDS=120
 ```
 
 ## Development
@@ -97,6 +114,14 @@ npm install
 ```
 
 Run services:
+
+```powershell
+npm run dev:all
+```
+
+`dev:all` is only a local testing helper. It uses the dev dependency `concurrently` to run all four apps in one terminal and is not required for production. It can be removed later by uninstalling `concurrently`, deleting the `dev:all` script from `package.json`, and removing this note.
+
+Or run each service in its own terminal:
 
 ```powershell
 npm run dev:backend
@@ -123,9 +148,13 @@ Do not run `npm run build` without project-owner approval.
 - Creates scan requests and 5-character turn codes.
 - Maintains one active request per station plus queued requests.
 - Starts the scan expiry timer only when a request becomes active on the station.
-- Publishes safe station status with expiry, queue depth, and cooldown.
+- Exposes safe station readiness with reader heartbeat, queue depth, active expiry, cooldown, and `canRequestScan`.
+- Starts no active scan timer while a request is queued, but removes stale queued requests after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
+- Publishes safe station status with expiry, queue depth, cooldown, and retryable read-failure messages.
 - Routes full card results by `requestId + deviceSessionId`.
+- Ignores duplicate card-read delivery for fulfilled/canceled/expired requests and audits the duplicate attempt.
 - Handles cancel, wrong-patient/misroute, expiry, delivery, and audit events.
+- Emits a private result-clear recommendation after `RESULT_AUTO_CLEAR_SECONDS`.
 
 ### Reader Agent
 
@@ -133,19 +162,28 @@ Do not run `npm run build` without project-owner approval.
 - Uses `goomgumx/thai-id-card-reader` through PC/SC and `pcsclite`.
 - Consumes active `scan.requests`.
 - Publishes safe reader status and full card reads to backend-consumed Kafka topics.
+- Publishes heartbeat every `READER_HEARTBEAT_MS`.
+- Publishes safe card lifecycle/retry states where available: `card_inserted`, `card_removed`, and `read_failed_retryable`.
+- Keeps the same active request after retryable read failures so a nurse does not need to request a new code.
 - Clears active request on station lifecycle updates such as canceled, expired, delivered, cooldown, or neutral.
 
 ### Nurse Webapp
 
 - Creates scan requests from the iPad.
+- Shows station readiness before scan: ready, busy, reader offline, queue depth, active expiry, and cooldown.
+- Pre-opens only safe station readiness/status SSE. Private result SSE still starts only after this iPad creates a request.
 - Shows the human turn code and queued/waiting/expired/result states.
+- Shows `Your turn now` when this nurse's queued request becomes active.
+- Shows retryable read failure as `Read failed, reinsert card. Same code is still active.`
 - Receives private card results through backend SSE backed by Kafka.
 - Displays patient fields and `photoAsBase64Uri` only in the private result view.
+- Auto-clears private patient fields/photo after `RESULT_AUTO_CLEAR_SECONDS`.
 - Provides `Cancel` before result and `Wrong Patient / Not Mine` after result.
 
 ### Station Display
 
-- Shows only safe station information: code, status, queue depth, expiry/cooldown countdown, and reader status.
+- Shows only safe station information: code, status, queue depth, expiry/cooldown countdown, reader readiness, and heartbeat freshness.
+- Emphasizes operational prompts such as `Scan this code`, `Reading`, `Read failed - reinsert card`, `Remove card`, `Preparing next code`, and `Reader offline`.
 - Receives status through backend SSE backed by Kafka.
 - Never displays citizen ID, patient name, address, photo, or raw card data.
 

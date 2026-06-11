@@ -53,18 +53,34 @@ button {
   font-weight: 700;
 }
 
+button:disabled {
+  background: #7b8794;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 button.secondary {
   margin-top: 16px;
   background: #8a3030;
 }
 
 .status,
-.result {
+.result,
+.readiness {
   margin-top: 20px;
   border: 1px solid #d8dee6;
   border-radius: 8px;
   background: white;
   padding: 18px;
+}
+
+.readiness.ready {
+  border-color: #9fd1bc;
+}
+
+.readiness.offline {
+  border-color: #e1a8a8;
+  background: #fff8f8;
 }
 
 .label {
@@ -83,6 +99,12 @@ button.secondary {
   font-size: 44px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.expired-code {
+  color: #b42318;
+  text-decoration: line-through;
+  text-decoration-thickness: 4px;
 }
 
 dl {

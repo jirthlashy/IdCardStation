@@ -13,6 +13,7 @@ export type ScanRequestStatus =
   | "queued"
   | "active"
   | "reading"
+  | "retryable_error"
   | "fulfilled"
   | "canceled"
   | "rejected"
@@ -37,8 +38,18 @@ export type ReaderState =
   | "ready"
   | "waiting_for_request"
   | "waiting_for_card"
+  | "card_inserted"
+  | "card_removed"
   | "reading"
+  | "read_failed_retryable"
+  | "heartbeat"
   | "error";
+
+export const READY_READER_STATES = ["ready", "waiting_for_request", "waiting_for_card", "heartbeat", "card_removed"] as const satisfies readonly ReaderState[];
+
+export function isReaderReadyState(state: ReaderState): boolean {
+  return READY_READER_STATES.includes(state as (typeof READY_READER_STATES)[number]);
+}
 
 export type EventType =
   | "scan.request.created"
@@ -126,8 +137,25 @@ export interface ReaderStatus {
   stationId: string;
   readerId: string;
   state: ReaderState;
+  readerReady?: boolean;
   activeRequestId?: string;
   turnCode?: string;
+  message?: string;
+  updatedAt: string;
+}
+
+export interface StationReadiness {
+  stationId: string;
+  readerAlive: boolean;
+  readerReady: boolean;
+  lastReaderSeenAt?: string;
+  activeRequestId?: string;
+  activeTurnCode?: string;
+  activeExpiresAt?: string;
+  cooldownUntil?: string;
+  queueDepth: number;
+  canRequestScan: boolean;
+  status: StationLifecycleStatus;
   message?: string;
   updatedAt: string;
 }
@@ -166,6 +194,7 @@ export interface AuditEvent {
     | "scan_rejected"
     | "scan_canceled"
     | "scan_expired"
+    | "duplicate_card_read"
     | "read_error"
     | "misrouted";
   requestId?: string;

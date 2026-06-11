@@ -1,0 +1,92 @@
+%% Dataflow overview grouped by Nurse iPad, Station, and Kafka.
+%% Backend appears as the coordinator/gateway because browsers do not connect to Kafka directly.
+
+flowchart LR
+  subgraph NurseArea["Nurse iPad"]
+    direction TB
+    NurseUI["nurse-webapp"]
+    NurseRequest["Create scan request\nHTTP POST /api/scan-requests"]
+    NurseReadinessSub["Safe readiness SSE\n/api/stations/A01/status/events"]
+    NursePrivateSub["Private result SSE\n/api/scan-results/{deviceSessionId}/events"]
+    NurseResult["Patient autofill\ncard fields + photoAsBase64Uri"]
+    NurseCancel["Cancel / Wrong Patient\nHTTP POST /rejections"]
+
+    NurseUI --> NurseRequest
+    NurseUI --> NurseReadinessSub
+    NurseUI --> NursePrivateSub
+    NursePrivateSub --> NurseResult
+    NurseUI --> NurseCancel
+  end
+
+  subgraph StationArea["Station"]
+    direction TB
+    StationDisplay["station-display"]
+    StationSse["Safe station SSE\n/api/stations/A01/status/events"]
+    ReaderAgent["reader-agent"]
+    SmartCard["Thai ID SmartCard reader"]
+    StationSafe["Display only:\nturnCode, status, queueDepth,\nexpiry/cooldown, reader state"]
+    StationReady["Reader heartbeat freshness\nready/offline"]
+
+    StationSse --> StationDisplay
+    StationDisplay --> StationSafe
+    StationDisplay --> StationReady
+    SmartCard --> ReaderAgent
+  end
+
+  subgraph KafkaArea["Kafka"]
+    direction TB
+    ScanRequestsTopic["scan.requests\nNo PII\nactive request only"]
+    StationStatusTopic["station.status.A01\nNo PII\nturnCode/status/queue/cooldown"]
+    ReaderStatusTopic["reader.status.A01\nNo PII\nreader lifecycle/errors"]
+    ReaderCardReadTopic["reader.card-read\nPII allowed\nbackend-consumed card payload"]
+    PrivateResultTopic["scan-result.{deviceSessionId}\nPII allowed\nprivate iPad result"]
+    RejectionsTopic["scan.rejections\nNo card payload\ncancel/wrong-patient"]
+    AuditTopic["audit.scan-events\nNo raw card/photo\naudit trail"]
+  end
+
+  Backend["Backend coordinator\nqueue/state machine + private routing"]
+
+  NurseRequest -->|"nurseId, stationId, deviceSessionId"| Backend
+  Backend -->|"201: requestId, deviceSessionId,\nturnCode, status, queuePosition"| NurseUI
+  Backend -->|"safe readiness: readerAlive,\nreaderReady, queueDepth, canRequestScan"| NurseReadinessSub
+
+  Backend -->|"produce active request\nrequestId + stationId + turnCode"| ScanRequestsTopic
+  ScanRequestsTopic -->|"consume active request"| ReaderAgent
+
+  Backend -->|"produce safe state\nactive/queued/reading/delivered/cooldown/neutral"| StationStatusTopic
+  StationStatusTopic -->|"backend mirrors to SSE"| Backend
+  Backend --> StationSse
+
+  ReaderAgent -->|"produce safe reader state\nheartbeat/waiting_for_card/reading/card_inserted/card_removed/read_failed_retryable"| ReaderStatusTopic
+  ReaderStatusTopic -->|"consume reader status"| Backend
+  Backend -->|"SSE reader state/readiness to nurse + station"| StationSse
+
+  ReaderStatusTopic -->|"retryable read failure"| Backend
+  Backend -->|"same request stays active\nRead failed, reinsert card"| StationStatusTopic
+
+  ReaderAgent -->|"produce card read\nrequestId + stationId + card payload"| ReaderCardReadTopic
+  ReaderCardReadTopic -->|"consume card read"| Backend
+  Backend -->|"validate active requestId\nlookup deviceSessionId"| Backend
+
+  Backend -->|"produce private result\nfull card payload + photo"| PrivateResultTopic
+  Backend -->|"SSE private result"| NursePrivateSub
+  Backend -->|"private result clear recommendation\nafter RESULT_AUTO_CLEAR_SECONDS"| NursePrivateSub
+
+  NurseCancel -->|"reason: cancel / wrong_patient"| Backend
+  Backend -->|"produce rejection event"| RejectionsTopic
+  RejectionsTopic -->|"consume/audit rejection"| Backend
+  Backend -->|"produce safe canceled/misrouted state"| StationStatusTopic
+
+  Backend -->|"produce audit events"| AuditTopic
+
+  classDef nurse fill:#e8eef8,stroke:#315f9a,color:#111c2c;
+  classDef station fill:#dff3ea,stroke:#267355,color:#10251c;
+  classDef kafka fill:#f0e8ff,stroke:#7154a6,color:#211438;
+  classDef backend fill:#fff1d6,stroke:#9b6b16,color:#2b1d05;
+  classDef pii fill:#fde7e9,stroke:#a63c49,color:#351014;
+
+  class NurseUI,NurseRequest,NurseReadinessSub,NursePrivateSub,NurseResult,NurseCancel nurse;
+  class StationDisplay,StationSse,ReaderAgent,SmartCard,StationSafe,StationReady station;
+  class ScanRequestsTopic,StationStatusTopic,ReaderStatusTopic,RejectionsTopic,AuditTopic kafka;
+  class ReaderCardReadTopic,PrivateResultTopic pii;
+  class Backend backend;

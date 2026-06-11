@@ -52,6 +52,15 @@ article {
   padding: 24px;
 }
 
+article.reader-ready {
+  border-color: #2f8f68;
+}
+
+article.reader-offline {
+  border-color: #8f4b4b;
+  background: #241b20;
+}
+
 .code-panel {
   margin-top: 28px;
 }

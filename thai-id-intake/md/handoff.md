@@ -1,213 +1,217 @@
-# OCRID_T01 Handoff
+# Thai ID Intake Handoff
 
-## Latest Decision Summary
+Use this file to continue in a new chat session.
 
-This repo should remain the Thai ID OCR fallback/research project. The real implementation should start in a new codebase, preferably a Node/TypeScript monorepo, because the production direction is now a SmartCard reader + backend + iPad webapp workflow.
+## Current Project
 
-Current production direction:
+`thai-id-intake` is a Node/TypeScript monorepo for a secure Thai ID SmartCard intake flow.
 
-- Use direct PC/SC SmartCard reading with `goomgumx/thai-id-card-reader`.
-- Do not use FAST ID software or the FAST ID file-watcher bridge.
-- Do not broadcast full card-read data to all nurse iPads.
-- Use a secure scan-request transaction:
-  - nurse taps `Scan ID Card` on iPad
-  - backend creates a request and short turn code, e.g. `A7K2Q`
-  - station PC display shows only the active code/status
-  - nurse compares iPad code with station PC code
-  - card is inserted and read
-  - full scan payload is delivered only to that nurse/device session
-- Normal-operation target:
-  - station PC: 0 clicks
-  - nurse iPad: 1 tap
-
-## Recommended Next Codebase
-
-Start a new monorepo for implementation:
+Kafka is the core event backbone. The backend is the routing authority. Nurse iPads and the station display do not connect directly to Kafka; they use backend HTTP/SSE.
 
 ```text
 thai-id-intake/
   apps/
-    reader-agent/
     backend/
+    reader-agent/
     nurse-webapp/
+    station-display/
   packages/
     shared-types/
+  md/
 ```
 
-Suggested responsibilities:
+## Main Workflow
 
-- `apps/reader-agent/`: Node.js station PC service using `goomgumx/thai-id-card-reader`.
-- `apps/backend/`: scan request transactions, active turn-code state, private result delivery, audit, expiry, wrong-patient rejection.
-- `apps/nurse-webapp/`: iPad webapp where nurses request scans and receive only their own scan results.
-- `packages/shared-types/`: shared normalized card payload and scan-request types.
+1. Nurse taps `Scan ID Card` on iPad.
+2. Backend creates a request with `requestId`, `deviceSessionId`, `stationId`, and a 5-character `turnCode`.
+3. If reader/station is ready, backend activates the request; otherwise the request queues.
+4. Queued requests do not burn active scan TTL. They can expire from queue after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
+5. Station display shows only safe data: active code, timing, queue depth, reader state.
+6. Nurse visually confirms iPad code matches station display code.
+7. Reader-agent reads the SmartCard for the active request.
+8. Backend validates active `requestId`, looks up `deviceSessionId`, and sends full data only to that private iPad session.
+9. Nurse UI displays patient fields and `photoAsBase64Uri`, then auto-clears after `RESULT_AUTO_CLEAR_SECONDS`.
+10. Station goes delivered -> cooldown -> next queued request or neutral.
 
-Keep `OCRID_T01` separate as OCR fallback/research. Later, OCR can become another adapter that sends the same normalized card payload into the new backend.
+The 5-character code is only for humans. System routing uses `requestId + deviceSessionId`.
 
-## Secure Scan Flow
+## Apps
 
-```text
-Nurse iPad
-  -> tap Scan ID Card
-  -> backend creates scan request + turn code
-  -> iPad subscribes to private result topic/session
+### `apps/backend`
 
-Station PC display
-  -> shows active turn code/status only
-  -> no citizen ID, full name, address, or photo
+- Express API and SSE bridge.
+- Kafka coordinator and scan transaction authority.
+- Maintains in-memory station queue/state.
+- Handles station lifecycle: `neutral`, `queued`, `active`, `reading`, `delivered`, `cooldown`, `canceled`, `expired`, `failed`, `misrouted`.
+- Aggregates reader heartbeat into safe station readiness.
+- Exposes:
+  - `GET /health`
+  - `GET /api/stations/:stationId/readiness`
+  - `GET /api/stations/:stationId/status/events`
+  - `POST /api/scan-requests`
+  - `GET /api/scan-requests/:requestId/events`
+  - `GET /api/scan-results/:deviceSessionId/events`
+  - `POST /api/scan-requests/:requestId/rejections`
 
-Nurse/staff
-  -> confirms iPad code matches station PC code (visual confirmation)
-  -> inserts card into SmartCard reader
+### `apps/reader-agent`
 
-Reader agent
-  -> reads card using goomgumx/thai-id-card-reader
-  -> attaches active requestId
-  -> sends normalized payload to backend
+- Windows station PC service.
+- Uses `goomgumx/thai-id-card-reader` through `thai-id-card-reader/build/index.js`.
+- Uses PC/SC and `pcsclite`.
+- Consumes active `scan.requests` and station lifecycle updates.
+- Produces:
+  - reader heartbeat every `READER_HEARTBEAT_MS` milliseconds, currently default `10000`.
+  - safe reader states.
+  - full card-read payload only to `reader.card-read`.
+- Demo stdin commands:
+  - `demo-read`
+  - `demo-card-in`
+  - `demo-card-out`
+  - `demo-read-error`
 
-Backend
-  -> publishes full scan result only to requesting nurse/device session
-  -> records audit event
+### `apps/nurse-webapp`
+
+- iPad-facing UI.
+- Shows system connection and station readiness before scan.
+- Disables `Scan ID Card` when reader is offline/not ready.
+- Shows queued/waiting/reading/retryable/expired/result states.
+- Shows `Your turn now` when a queued request becomes active.
+- Displays `photoAsBase64Uri` in private result view.
+- Has `Cancel` before result and `Wrong Patient / Not Mine` after result.
+- Auto-clears patient data/photo after configured result clear time.
+
+### `apps/station-display`
+
+- Station PC display app.
+- Shows safe station info only.
+- Shows reader ready/offline and heartbeat freshness.
+- Shows active expiry, cooldown countdown, queue depth.
+- Operational prompts include reader offline, scan this code, reading, read failed/reinsert card, remove card, preparing next code.
+
+### `packages/shared-types`
+
+- Shared contracts and Kafka topic helpers.
+- Includes normalized Thai ID card payload, Kafka envelope, request/status/result/rejection/audit types.
+- Important rule: station/readiness/reader status types must remain PII-free.
+
+## Kafka Topics
+
+| Topic | Sensitive? | Purpose |
+| --- | --- | --- |
+| `scan.requests` | No | Backend announces active station request to reader-agent. |
+| `station.status.{stationId}` | No | Backend publishes safe station state: code, queue, expiry, cooldown, canceled/expired/retry prompts. |
+| `reader.status.{stationId}` | No | Reader-agent publishes heartbeat and safe reader lifecycle. |
+| `reader.card-read` | Yes | Reader-agent publishes full SmartCard payload for backend validation. |
+| `scan-result.{deviceSessionId}` | Yes | Backend publishes private result for one iPad/device session. |
+| `scan.rejections` | No card payload | Cancel and wrong-patient/misroute events. |
+| `audit.scan-events` | No raw card/photo | Operational audit trail without raw card payload/photo. |
+
+Station-wide topics must never contain citizen ID, full name, address, photo, or raw SmartCard output.
+
+## Local Run
+
+Start Kafka and Kafka UI:
+
+```powershell
+docker compose up -d kafka kafka-ui
 ```
 
-If the wrong patient card is scanned:
+Run all four apps for local testing:
 
-- The result appears only on the requesting nurse's iPad.
-- Nurse taps `Wrong Patient / Not Mine`.
-- Backend marks the scan as `misrouted` or rejected.
-- Full data is not broadcast to other iPads.
-- Correct nurse must request/use their own turn code and rescan the card.
+```powershell
+npm run dev:all
+```
 
-## Security Rules
+`dev:all` is a local testing helper only. It uses `concurrently` from dev dependencies and can be removed before production.
 
-- Never publish full card data to a station-wide topic.
-- Station-wide status may include only safe metadata:
-  - active turn code
-  - reader status
-  - queue/waiting state
-  - errors without PII
-- Full scan payload goes only to a private nurse/device-session destination.
-- Scan requests expire quickly, around `60-120 seconds`.
-- Avoid logging full citizen ID, full address, photo base64, laser/back number, or raw SmartCard output.
-- Store ID-card photo only temporarily for confirmation unless hospital policy requires retention.
-- Audit request creation, code activation, card scan, result delivery, rejection, expiry, and errors.
+Run apps separately:
 
-## SmartCard Reader Agent Notes
+```powershell
+npm run dev:backend
+npm run dev:reader
+npm run dev:nurse
+npm run dev:station
+```
 
-Chosen reader library:
+Do not run `npm run build` unless the project owner explicitly approves.
 
-- Package/repo: `goomgumx/thai-id-card-reader`
-- Runtime direction: Node.js local service on the station PC
-- Native dependency caution: `pcsclite` may require Windows build tooling
-
-Reader agent responsibilities:
-
-- Initialize `ThaiIdCardReader`.
-- Listen for successful reads with `onReadComplete`.
-- Listen for read failures with `onReadError`.
-- Add metadata:
-  - `stationId`, e.g. `A01`
-  - `readerId`, e.g. `A01-PC-01`
-  - `source`, e.g. `PCSC_THAI_ID`
-  - `readAt`
-  - active `requestId`
-- Normalize library-specific fields into the project contract.
-- Send payload to backend.
-- Debounce duplicate reads from the same inserted card.
-- Log only non-sensitive status.
-
-Suggested local config:
+## Key Env Defaults
 
 ```env
+KAFKA_BROKERS=localhost:9092
+BACKEND_PORT=3001
+SCAN_REQUEST_TTL_SECONDS=90
+STATION_COOLDOWN_MS=3000
+QUEUED_REQUEST_MAX_AGE_SECONDS=300
+RESULT_AUTO_CLEAR_SECONDS=120
 STATION_ID=A01
 READER_ID=A01-PC-01
-CARD_READ_API_URL=http://localhost:3001/api/card-reads
+READER_HEARTBEAT_MS=10000
 INSERT_CARD_DELAY_MS=500
 READ_TIMEOUT_MS=5000
+VITE_BACKEND_URL=http://localhost:3001
+VITE_STATION_ID=A01
+VITE_RESULT_AUTO_CLEAR_SECONDS=120
 ```
 
-Suggested normalized payload shape:
+## Recent Changes To Remember
 
-```json
-{
-  "requestId": "...",
-  "stationId": "A01",
-  "readerId": "A01-PC-01",
-  "source": "PCSC_THAI_ID",
-  "readAt": "2026-06-08T00:00:00.000Z",
-  "card": {
-    "citizenId": "...",
-    "titleTh": "...",
-    "titleEn": "...",
-    "fullNameTh": "...",
-    "fullNameEn": "...",
-    "firstNameTh": "...",
-    "firstNameEn": "...",
-    "lastNameTh": "...",
-    "lastNameEn": "...",
-    "dateOfBirth": "...",
-    "gender": "...",
-    "cardIssuer": "...",
-    "issueDate": "...",
-    "expireDate": "...",
-    "address": "...",
-    "photoAsBase64Uri": "..."
-  }
-}
-```
+- Heartbeat default changed from 5 seconds to 10 seconds.
+- Added `npm run dev:all`.
+- Added station readiness aggregation.
+- Added queued max age so queued requests do not burn active scan TTL.
+- Added retryable read-failure flow: same code stays active until active TTL expires.
+- Added reader heartbeat/card lifecycle states.
+- Added nurse readiness panel and station offline warning.
+- Added station display reader heartbeat freshness.
+- Added private result auto-clear.
+- Expanded README Kafka topic explanation.
+- Updated Mermaid docs:
+  - `md/full_scan_sequence.mmd`
+  - `md/kafka_dataflow_overview.mmd`
 
-## OCRID_T01 Current State
+## Verification Already Run
 
-This repo is a Python Thai National ID OCR/prototyping project. It started with `openthaigpt/thai-trocr`, then moved to PaddleOCR because TroCR performed poorly on Thai ID cards.
-
-Useful files:
-
-- `ocr_thai_id.py`: OCR an image file.
-- `camera_ocr.py`: laptop-camera capture, card detection/flattening, then OCR.
-- `scan-testing-image.ps1`: interactive image testing script for `testingPng/`.
-- `semantic_recognizer.py`: Mode 4 semantic recognition from full-card OCR lines.
-- `card_detect.py`: detects and warps card to CR80/Thai ID ratio.
-- `paddle_id_ocr.py`: PaddleOCR setup, output formatting, finalizers, and boxed preview drawing.
-- `regions.example.json`: crop/region example for region-based OCR modes.
-
-Run image testing:
+Recent type checks passed:
 
 ```powershell
-.\scan-testing-image.ps1
+npm run lint -w @thai-id-intake/shared-types
+npm run lint -w @thai-id-intake/backend
+npm run lint -w @thai-id-intake/reader-agent
+npm run lint -w @thai-id-intake/nurse-webapp
+npm run lint -w @thai-id-intake/station-display
 ```
 
-Run camera OCR:
+No `npm run build` was run.
 
-```powershell
-python .\camera_ocr.py --mode 4
-```
+## Known Caveats
 
-Compile check:
+- State is currently in memory. Restarting backend clears active queues/results.
+- Auth/session hardening is deferred until hospital nurseID/device-auth rules are known.
+- `dev:all` is local-only and not part of production.
+- `kafbat/kafka-ui:main` is local testing only and should be removed from deployment.
+- `node-gyp`/`pcsclite` Windows setup can be fragile. See `md/tools.md`.
+- The reader library package main path has quirks, so reader-agent imports `thai-id-card-reader/build/index.js`.
+- Real hardware behavior for card inserted/removed depends on what PC/SC/library events expose.
 
-```powershell
-.\.venv\Scripts\python.exe -m py_compile .\camera_ocr.py .\ocr_thai_id.py .\semantic_recognizer.py .\paddle_id_ocr.py .\card_detect.py
-```
+## Best Next Steps
 
-Generated OCR data is sensitive:
-
-- `output/output*.json`
-- `output/boxoutputpic/`
-- `output/crops/`
-- `testingPng/`
-
-Do not commit real ID-card images, OCR output, SmartCard read output, local reader-agent logs, pending-read payloads, or card photos.
-
-## Reference Files In `mdfiles/`
-
-- `userflow_Goom_plan.mmd`: best starting reference for the next implementation codebase. It captures the latest secure 5-character turn-code flow, private delivery, wrong-patient recovery, and click targets.
-- `tools.md`: useful companion for the new reader-agent repo. It documents Windows `pcsclite` / `node-gyp` troubleshooting.
-- `project_understanding_goomgumx_plan.mmd`: useful historical architecture diagram, but it still contains older pending-queue/broadcast ideas and should be updated before using as implementation truth.
-- `PLANFastID watcherbridge.md`: obsolete for the current direction. Keep only as historical context; do not use as the starting plan.
-
-## Next Steps
-
-1. Create the new `thai-id-intake/` monorepo.
-2. Use `mdfiles/userflow_Goom_plan.mmd` as the primary workflow reference.
-3. Use `mdfiles/tools.md` when setting up the Windows SmartCard reader agent.
-4. Build the reader-agent proof of concept on the real A01 Windows PC with the actual USB SmartCard reader.
-5. Build backend scan-request transactions and private result delivery before building broad nurse UI features.
-6. Keep OCR Mode 4 available as a fallback/manual recovery path only.
+1. Manual two-nurse queue test:
+   - Nurse 1 active.
+   - Nurse 2 queued with no active countdown.
+   - Nurse 1 expires/cancels/completes.
+   - Nurse 2 becomes active with fresh timer and `Your turn now`.
+2. Reader downtime test:
+   - Stop reader-agent.
+   - Confirm nurse shows reader offline and scan is disabled.
+   - Restart reader-agent and confirm readiness recovers after heartbeat.
+3. Retry test:
+   - Use `demo-read-error`.
+   - Confirm station and nurse show reinsert-card message with same code.
+4. Private result test:
+   - Use `demo-read`.
+   - Confirm result appears only on matching iPad session.
+   - Confirm photo auto-clears.
+5. Security audit:
+   - Confirm `station.status.*` and `reader.status.*` remain PII-free.
+   - Confirm full data only appears on `reader.card-read` and private result delivery.
