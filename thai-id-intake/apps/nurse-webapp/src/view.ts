@@ -28,7 +28,7 @@ export function render(view: ViewState, handlers: ViewHandlers) {
         </div>
         <div class="actions">
           <div class="connection ${view.connected ? "online" : "offline"}">${view.connected ? "Connected" : "Offline"}</div>
-          <button id="scan" ${!view.readiness.canRequestScan ? "disabled" : ""}>Scan ID Card</button>
+          <button id="scan" ${!view.readiness.canRequestScan || view.currentRequest ? "disabled" : ""}>Scan ID Card</button>
         </div>
       </section>
       <section class="readiness ${view.readiness.readerReady ? "ready" : "offline"}">
@@ -43,7 +43,7 @@ export function render(view: ViewState, handlers: ViewHandlers) {
         <div class="code ${view.state === "expired" ? "expired-code" : ""}">${view.currentRequest?.turnCode ?? "-----"}</div>
         <p>${statusText(view.state, view.currentRequest)}</p>
       </section>
-      ${view.currentRequest && !view.result ? `<button id="cancel" class="secondary">Cancel</button>` : ""}
+      ${view.currentRequest && !view.result ? `<button id="cancel" class="secondary" ${view.state === "canceling" ? "disabled" : ""}>${view.state === "canceling" ? "Canceling" : "Cancel"}</button>` : ""}
       ${view.currentRequest && view.result ? `<button id="wrong-patient" class="secondary">Wrong Patient / Not Mine</button>` : ""}
     </main>
   `;
@@ -60,6 +60,7 @@ function statusText(state: ScanState, currentRequest?: ScanRequestView) {
   if (state === "received") return "Private result received for this iPad session.";
   if (state === "expired") return "Request expired. Tap scan again if still needed.";
   if (state === "failed") return "Scan failed. Retry or use the fallback workflow.";
+  if (state === "canceling") return "Canceling this scan request.";
   return "Reader is working.";
 }
 

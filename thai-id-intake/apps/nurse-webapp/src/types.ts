@@ -1,4 +1,4 @@
-export type ScanState = "idle" | "queued" | "waiting" | "reading" | "received" | "expired" | "failed" | "retryable_error";
+export type ScanState = "idle" | "queued" | "waiting" | "reading" | "received" | "expired" | "failed" | "retryable_error" | "canceling";
 
 export type ScanRequestView = {
   requestId: string;

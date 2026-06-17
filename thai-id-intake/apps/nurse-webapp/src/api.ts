@@ -16,9 +16,17 @@ export async function createScanRequest(backendUrl: string, stationId: string): 
 }
 
 export async function rejectScanRequest(backendUrl: string, requestId: string, reason: "cancel" | "wrong_patient") {
-  await fetch(`${backendUrl}/api/scan-requests/${requestId}/rejections`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason })
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${backendUrl}/api/scan-requests/${requestId}/rejections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error("scan rejection failed");
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }

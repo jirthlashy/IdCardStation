@@ -189,15 +189,27 @@ async function checkSystemConnection() {
 
 async function cancelRequest() {
   if (!currentRequest) return;
-  await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "cancel");
-  resetRequestState();
+  state = "canceling";
+  rerender();
+  try {
+    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "cancel");
+    resetRequestState();
+  } catch {
+    connected = false;
+    state = "failed";
+  }
   rerender();
 }
 
 async function wrongPatientRequest() {
   if (!currentRequest) return;
-  await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "wrong_patient");
-  resetRequestState();
+  try {
+    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "wrong_patient");
+    resetRequestState();
+  } catch {
+    connected = false;
+    state = "failed";
+  }
   rerender();
 }
 
