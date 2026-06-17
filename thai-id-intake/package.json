@@ -13,13 +13,16 @@
     "dev:nurse": "npm run dev -w @thai-id-intake/nurse-webapp",
     "dev:station": "npm run dev -w @thai-id-intake/station-display",
     "dev:all": "concurrently -n backend,reader,nurse,station -c blue,green,magenta,cyan \"npm run dev:backend\" \"npm run dev:reader\" \"npm run dev:nurse\" \"npm run dev:station\"",
-    "lint": "tsc --noEmit --pretty",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "npm run build --workspaces"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "concurrently": "^8.2.2",
     "node-gyp": "^12.4.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
   }
 }

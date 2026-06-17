@@ -139,7 +139,7 @@ Station display: http://localhost:3002
 Kafka UI:       http://localhost:8080
 ```
 
-Do not run `npm run build` without project-owner approval.
+`npm run build` is allowed as a normal verification step.
 
 ## App Responsibilities
 

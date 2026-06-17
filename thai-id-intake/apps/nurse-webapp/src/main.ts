@@ -1,10 +1,10 @@
 import "./style.css";
-import { checkHealth, createScanRequest, rejectScanRequest } from "./api";
-import { appConfig } from "./config";
-import { openPrivateResultStream, openRequestStatusStream, openStationReadinessStream } from "./streams";
-import { startExpiryTicker, startResultClearTimer } from "./timers";
-import { initialReadiness, PrivateScanResultView, ReadinessView, ScanRequestView, ScanState } from "./types";
-import { render } from "./view";
+import { checkHealth, createScanRequest, rejectScanRequest } from "./api/api";
+import { openPrivateResultStream, openRequestStatusStream, openStationReadinessStream } from "./api/streams";
+import { appConfig } from "./config/config";
+import { startExpiryTicker, startResultClearTimer } from "./state/timers";
+import { initialReadiness, PrivateScanResultView, ReadinessView, ScanRequestView, ScanState } from "./state/types";
+import { render } from "./ui/view";
 
 const app = document.querySelector<HTMLDivElement>("#root");
 let state: ScanState = "idle";

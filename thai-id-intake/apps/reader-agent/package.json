@@ -13,7 +13,8 @@
     "@thai-id-intake/shared-types": "0.1.0",
     "kafkajs": "^2.2.4",
     "nanoid": "^5.0.7",
-    "thai-id-card-reader": "github:goomgumx/thai-id-card-reader"
+    "thai-id-card-reader": "github:goomgumx/thai-id-card-reader",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

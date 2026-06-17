@@ -1,8 +1,8 @@
 import "./style.css";
-import { appConfig } from "./config";
-import { openStationStatusStream } from "./stream";
-import { initialReader, initialReadiness, initialStation, ReaderPayload, ReadinessPayload, StationPayload } from "./types";
-import { render } from "./view";
+import { openStationStatusStream } from "./api/stream";
+import { appConfig } from "./config/config";
+import { initialReader, initialReadiness, initialStation, ReaderPayload, ReadinessPayload, StationPayload } from "./state/types";
+import { render } from "./ui/view";
 
 const app = document.querySelector<HTMLDivElement>("#root");
 

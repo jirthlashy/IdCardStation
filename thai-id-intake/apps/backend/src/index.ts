@@ -1,11 +1,11 @@
 import cors from "cors";
 import express from "express";
-import { backendConfig } from "./config.js";
-import { emitStationEvent } from "./sse.js";
-import { startKafka } from "./kafka.js";
-import { registerRoutes } from "./routes.js";
-import { expireOldRequests, publishStationStatus } from "./stationLifecycle.js";
-import { getStationReadiness, stations } from "./stationStore.js";
+import { backendConfig } from "./config/config.js";
+import { emitStationEvent } from "./infra/sse.js";
+import { startKafka } from "./infra/kafka.js";
+import { registerRoutes } from "./http/routes.js";
+import { expireOldRequests, publishStationStatus } from "./station/stationLifecycle.js";
+import { getStationReadiness, stations } from "./station/stationStore.js";
 
 const app = express();
 
