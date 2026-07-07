@@ -27,6 +27,7 @@ describe("reader-agent validation", () => {
 
   it("rejects invalid env numbers", () => {
     expect(() => parseReaderEnv({ READ_TIMEOUT_MS: "0" })).toThrow("Invalid reader-agent environment");
+    expect(() => parseReaderEnv({ STATION_ID: "bad/topic" })).toThrow("Invalid reader-agent environment");
   });
 
   it("validates scan request and station status Kafka events", () => {
@@ -53,5 +54,23 @@ describe("reader-agent validation", () => {
         payload: { stationId: "A01", status: "active", queueDepth: "bad", updatedAt: "2026-06-17T00:00:00.000Z" }
       })
     ).toThrow();
+  });
+
+  it("strips unknown station status fields", () => {
+    const parsed = stationStatusEventSchema.parse({
+      ...envelope,
+      eventType: "station.status.updated",
+      payload: {
+        stationId: "A01",
+        status: "active",
+        queueDepth: 0,
+        updatedAt: "2026-06-17T00:00:00.000Z",
+        activeRequestId: "req-1",
+        card: { citizenId: "1234567890123" }
+      }
+    });
+
+    expect(parsed.payload).not.toHaveProperty("activeRequestId");
+    expect(parsed.payload).not.toHaveProperty("card");
   });
 });

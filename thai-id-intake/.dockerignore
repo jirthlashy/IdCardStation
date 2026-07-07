@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.*
+*.log
+dev-server.log
+dev-server.err.log
+.git
+.deepsec

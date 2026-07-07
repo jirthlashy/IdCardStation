@@ -1,11 +1,27 @@
-function resolveBackendUrl() {
-  const configuredUrl = import.meta.env.VITE_BACKEND_URL;
-  const isBrowserLocalhost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  if (configuredUrl && (isBrowserLocalhost || !configuredUrl.includes("localhost"))) return configuredUrl;
-  return `${window.location.protocol}//${window.location.hostname}:3001`;
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host === "::1" || host === "0.0.0.0") return true;
+  const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  return Boolean(ipv4 && Number(ipv4[1]) === 127);
+}
+
+export function resolveBackendUrl(configuredUrl: string | undefined, browserLocation: Pick<Location, "hostname" | "protocol">) {
+  if (configuredUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(configuredUrl);
+    } catch {
+      throw new Error("Invalid VITE_BACKEND_URL");
+    }
+    if (isLoopbackHost(parsed.hostname) && !isLoopbackHost(browserLocation.hostname)) {
+      throw new Error("Loopback VITE_BACKEND_URL is not allowed for non-local browsers");
+    }
+    return parsed.origin;
+  }
+  return `${browserLocation.protocol}//${browserLocation.hostname}:3001`;
 }
 
 export const appConfig = {
-  backendUrl: resolveBackendUrl(),
+  backendUrl: resolveBackendUrl(import.meta.env.VITE_BACKEND_URL, window.location),
   stationId: import.meta.env.VITE_STATION_ID ?? "A01"
 };

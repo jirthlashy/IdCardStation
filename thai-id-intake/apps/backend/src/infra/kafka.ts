@@ -27,7 +27,13 @@ export async function startKafka() {
       if (topic === KAFKA_TOPICS.scanRejections) {
         const rejected = parseKafkaJson(scanRejectedEventSchema, message.value) as ScanRejectedEvent | undefined;
         if (!rejected) return;
-        await audit({ action: rejected.payload.reason === "cancel" ? "scan_canceled" : "scan_rejected", ...rejected.payload, occurredAt: nowIso() });
+        await audit({
+          action: rejected.payload.reason === "cancel" ? "scan_canceled" : "scan_rejected",
+          requestId: rejected.payload.requestId,
+          stationId: rejected.payload.stationId,
+          deviceSessionId: rejected.payload.deviceSessionId,
+          occurredAt: nowIso()
+        });
       }
       if (topic === KAFKA_TOPICS.readerStatus(backendConfig.defaultStationId)) {
         const readerStatus = parseKafkaJson(readerStatusEventSchema, message.value) as ReaderStatusEvent | undefined;

@@ -2,7 +2,7 @@
 
 Secure Thai ID SmartCard intake for a nurse iPad, A01 station display, Windows reader agent, backend coordinator, and Kafka event backbone.
 
-Kafka carries the event flow. The backend owns scan authorization, station queue state, cooldown, and private result routing. The 5-character code is for human confirmation only; the system routes by `requestId + deviceSessionId`.
+Kafka carries the event flow. The backend owns scan authorization, station queue state, cooldown, and private result routing. The 5-character code is for human confirmation only; private browser actions are bound to `requestId + requestAccessToken`.
 
 ## Project Structure
 
@@ -20,14 +20,14 @@ thai-id-intake/
 ## Current Scan Flow
 
 1. Nurse taps `Scan ID Card` on the iPad.
-2. Backend creates a request with `requestId`, `deviceSessionId`, `stationId`, 5-character `turnCode`, and expiry.
+2. Backend creates a request with `requestId`, backend-owned `deviceSessionId`, request access token, `stationId`, 5-character `turnCode`, and expiry.
 3. Nurse app pre-subscribes to safe station readiness. If the reader is offline, the scan button is disabled until heartbeat recovers.
 4. If the station is busy or cooling down, the request is queued. Queued requests do not burn scan time, but stale queued requests expire after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
 5. Station display shows only the active turn code, queue depth, active expiry/cooldown, status, and reader heartbeat state.
 6. Nurse compares the iPad code with the station display code.
 7. Reader agent reads the inserted Thai ID card for the active request.
 8. If a retryable read error happens, the same request stays active until its active TTL expires. Nurse and station show `Read failed, reinsert card`.
-9. Backend validates the active `requestId`, looks up `deviceSessionId`, and publishes the full card result only to that private iPad session.
+9. Backend validates the active `requestId`, looks up `deviceSessionId`, and publishes the full card result only to the request-owned private iPad stream.
 10. Nurse UI auto-clears private patient fields/photo after `RESULT_AUTO_CLEAR_SECONDS`.
 11. Station moves `delivered -> cooldown` for 3 seconds, then activates the next queued request with a fresh expiry timer or returns to `neutral`.
 
@@ -39,7 +39,7 @@ neutral -> active -> reading -> delivered -> cooldown -> neutral/next queued req
 
 Exception states include `queued`, `canceled`, `expired`, `failed`, and `misrouted`.
 
-Auth/session hardening is intentionally deferred until hospital nurseID and device-auth rules are known.
+Hospital SSO/device management is still future work. The current production hardening uses a backend-issued request access token for request-status, private-result, cancel, and wrong-patient actions.
 
 ## Local Kafka
 
@@ -62,6 +62,8 @@ http://localhost:8080
 ```
 
 `kafbat/kafka-ui:main` is for testing only and should be removed from deployment.
+
+For production, use broker/network ACLs so only backend and reader-agent can access sensitive topics, disable topic auto-creation where possible, and configure bounded retention for PII-bearing topics such as `reader.card-read` and `scan-result.*`.
 
 ## Kafka Topics
 
@@ -91,6 +93,8 @@ Copy `.env.example` to `.env` and adjust values.
 ```env
 KAFKA_BROKERS=localhost:9092
 BACKEND_PORT=3001
+ALLOWED_STATION_IDS=A01
+CORS_ALLOWED_ORIGINS=
 SCAN_REQUEST_TTL_SECONDS=90
 STATION_COOLDOWN_MS=3000
 STATION_ID=A01
@@ -100,8 +104,12 @@ READ_TIMEOUT_MS=5000
 READER_HEARTBEAT_MS=10000
 QUEUED_REQUEST_MAX_AGE_SECONDS=300
 RESULT_AUTO_CLEAR_SECONDS=120
+MAX_QUEUE_DEPTH_PER_STATION=10
+SCAN_REQUEST_RATE_LIMIT_WINDOW_MS=60000
+SCAN_REQUEST_RATE_LIMIT_MAX=20
 VITE_BACKEND_URL=http://localhost:3001
 VITE_STATION_ID=A01
+VITE_NURSE_ID=unassigned-nurse
 VITE_RESULT_AUTO_CLEAR_SECONDS=120
 ```
 
@@ -146,12 +154,14 @@ Kafka UI:       http://localhost:8080
 ### Backend
 
 - Creates scan requests and 5-character turn codes.
+- Issues a one-time request access token for private browser ownership checks.
 - Maintains one active request per station plus queued requests.
+- Keeps station state in memory for v1. A backend restart publishes neutral safe station status; active scans are invalid and nurses must rescan.
 - Starts the scan expiry timer only when a request becomes active on the station.
 - Exposes safe station readiness with reader heartbeat, queue depth, active expiry, cooldown, and `canRequestScan`.
 - Starts no active scan timer while a request is queued, but removes stale queued requests after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
 - Publishes safe station status with expiry, queue depth, cooldown, and retryable read-failure messages.
-- Routes full card results by `requestId + deviceSessionId`.
+- Routes full card results by `requestId + requestAccessToken` on the browser side and `requestId + deviceSessionId` internally.
 - Ignores duplicate card-read delivery for fulfilled/canceled/expired requests and audits the duplicate attempt.
 - Handles cancel, wrong-patient/misroute, expiry, delivery, and audit events.
 - Emits a private result-clear recommendation after `RESULT_AUTO_CLEAR_SECONDS`.
@@ -170,12 +180,13 @@ Kafka UI:       http://localhost:8080
 ### Nurse Webapp
 
 - Creates scan requests from the iPad.
+- Sends configured nurse identity from `VITE_NURSE_ID` until hospital SSO exists.
 - Shows station readiness before scan: ready, busy, reader offline, queue depth, active expiry, and cooldown.
 - Pre-opens only safe station readiness/status SSE. Private result SSE still starts only after this iPad creates a request.
 - Shows the human turn code and queued/waiting/expired/result states.
 - Shows `Your turn now` when this nurse's queued request becomes active.
 - Shows retryable read failure as `Read failed, reinsert card. Same code is still active.`
-- Receives private card results through backend SSE backed by Kafka.
+- Receives private card results through request-token-protected backend SSE backed by Kafka.
 - Displays patient fields and `photoAsBase64Uri` only in the private result view.
 - Auto-clears private patient fields/photo after `RESULT_AUTO_CLEAR_SECONDS`.
 - Provides `Cancel` before result and `Wrong Patient / Not Mine` after result.
@@ -232,8 +243,8 @@ Start-Service SCardSvr
 ## Security Rules
 
 - The 5-character code is not a routing secret; it is only for human visual confirmation.
-- Backend routes private results by `requestId + deviceSessionId`.
+- Backend routes private browser access by `requestId + requestAccessToken`.
 - Station display and station-wide Kafka topics must remain PII-free.
-- Full card payload and photo go only to `scan-result.{deviceSessionId}` and the private nurse iPad result bridge.
+- Full card payload and photo go only to `scan-result.{deviceSessionId}` internally and the request-token-protected private nurse iPad result bridge.
 - Do not log citizen ID, full address, photo base64, laser/back number, or raw SmartCard output.
 - OCR remains a future fallback path and must follow the same private delivery rule.

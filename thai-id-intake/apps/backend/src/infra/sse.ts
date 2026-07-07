@@ -2,11 +2,14 @@ import { EventEmitter } from "node:events";
 import { Express } from "express";
 import { PrivateScanResult, ReaderStatus, SafeStationStatus, ScanRequest, StationReadiness } from "@thai-id-intake/shared-types";
 import { nowIso } from "../events/events.js";
-import { requests } from "../station/stationStore.js";
+import { isAllowedStationId } from "../config/config.js";
+import { requests, verifyRequestAccessToken } from "../station/stationStore.js";
+
+type PublicReaderStatus = Omit<ReaderStatus, "activeRequestId">;
 
 type StationEvent =
   | { kind: "station"; payload: SafeStationStatus }
-  | { kind: "reader"; payload: ReaderStatus }
+  | { kind: "reader"; payload: PublicReaderStatus }
   | { kind: "readiness"; payload: StationReadiness };
 
 const privateResults = new EventEmitter();
@@ -19,16 +22,7 @@ stationEvents.setMaxListeners(500);
 requestEvents.setMaxListeners(500);
 
 export function emitRequestStatus(request: ScanRequest) {
-  requestEvents.emit(request.requestId, {
-    requestId: request.requestId,
-    stationId: request.stationId,
-    deviceSessionId: request.deviceSessionId,
-    turnCode: request.turnCode,
-    status: request.status,
-    activatedAt: request.activatedAt,
-    expiresAt: request.expiresAt,
-    updatedAt: nowIso()
-  });
+  requestEvents.emit(request.requestId, requestStatusPayload(request));
 }
 
 export function emitRequestClearRecommended(request: ScanRequest) {
@@ -40,41 +34,50 @@ export function emitRequestClearRecommended(request: ScanRequest) {
   });
 }
 
-export function emitPrivateResult(deviceSessionId: string, result: PrivateScanResult) {
-  privateResults.emit(deviceSessionId, result);
+export function emitPrivateResult(requestId: string, result: PrivateScanResult) {
+  privateResults.emit(requestId, result);
 }
 
 export function emitStationEvent(stationId: string, event: StationEvent) {
-  lastStationEvents.set(stationId, [event, ...(lastStationEvents.get(stationId) ?? []).filter((item) => item.kind !== event.kind)]);
-  stationEvents.emit(stationId, event);
+  const safeEvent = sanitizeStationEvent(event);
+  lastStationEvents.set(stationId, [safeEvent, ...(lastStationEvents.get(stationId) ?? []).filter((item) => item.kind !== safeEvent.kind)]);
+  stationEvents.emit(stationId, safeEvent);
 }
 
 export function registerSseRoutes(app: Express) {
-  app.get("/api/scan-results/:deviceSessionId/events", (req, res) => {
-    const { deviceSessionId } = req.params;
+  app.get("/api/scan-requests/:requestId/result-events", (req, res) => {
+    const { requestId } = req.params;
+    const request = requests.get(requestId);
+    const accessToken = getAccessToken(req.query.accessToken);
+    if (!request || !verifyRequestAccessToken(requestId, accessToken)) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no"
     });
-    res.write(`event: connected\ndata: ${JSON.stringify({ deviceSessionId })}\n\n`);
+    res.write(`event: connected\ndata: ${JSON.stringify({ requestId })}\n\n`);
 
     const onResult = (payload: PrivateScanResult) => {
       res.write(`event: scan-result\ndata: ${JSON.stringify(payload)}\n\n`);
     };
-    privateResults.on(deviceSessionId, onResult);
+    privateResults.on(requestId, onResult);
 
     req.on("close", () => {
-      privateResults.off(deviceSessionId, onResult);
+      privateResults.off(requestId, onResult);
     });
   });
 
   app.get("/api/scan-requests/:requestId/events", (req, res) => {
     const { requestId } = req.params;
     const request = requests.get(requestId);
-    if (!request) {
-      res.status(404).json({ error: "request not found" });
+    const accessToken = getAccessToken(req.query.accessToken);
+    if (!request || !verifyRequestAccessToken(requestId, accessToken)) {
+      res.status(403).json({ error: "forbidden" });
       return;
     }
 
@@ -99,6 +102,10 @@ export function registerSseRoutes(app: Express) {
 
   app.get("/api/stations/:stationId/status/events", (req, res) => {
     const { stationId } = req.params;
+    if (!isAllowedStationId(stationId)) {
+      res.status(404).json({ error: "station not found" });
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -119,4 +126,28 @@ export function registerSseRoutes(app: Express) {
       stationEvents.off(stationId, onStatus);
     });
   });
+}
+
+function getAccessToken(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  return undefined;
+}
+
+export function requestStatusPayload(request: ScanRequest) {
+  return {
+    requestId: request.requestId,
+    stationId: request.stationId,
+    turnCode: request.turnCode,
+    status: request.status,
+    activatedAt: request.activatedAt,
+    expiresAt: request.expiresAt,
+    updatedAt: nowIso()
+  };
+}
+
+export function sanitizeStationEvent(event: StationEvent): StationEvent {
+  if (event.kind !== "reader") return event;
+  const { stationId, readerId, state, readerReady, turnCode, message, updatedAt } = event.payload;
+  return { kind: "reader", payload: { stationId, readerId, state, readerReady, turnCode, message, updatedAt } };
 }

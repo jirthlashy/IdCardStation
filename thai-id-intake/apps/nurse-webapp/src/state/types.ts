@@ -2,6 +2,7 @@ export type ScanState = "idle" | "queued" | "waiting" | "reading" | "received" |
 
 export type ScanRequestView = {
   requestId: string;
+  requestAccessToken: string;
   deviceSessionId: string;
   stationId: string;
   turnCode: string;

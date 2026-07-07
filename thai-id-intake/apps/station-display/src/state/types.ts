@@ -1,6 +1,5 @@
 export type StationPayload = {
   stationId: string;
-  activeRequestId?: string;
   turnCode?: string;
   status?: string;
   readerState?: string;

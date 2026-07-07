@@ -50,11 +50,11 @@ async function requestScan() {
   result = undefined;
   rerender();
   try {
-    currentRequest = await createScanRequest(appConfig.backendUrl, appConfig.stationId);
+    currentRequest = await createScanRequest(appConfig.backendUrl, appConfig.stationId, appConfig.nurseId);
     connected = true;
     state = currentRequest.status === "queued" ? "queued" : "waiting";
-    subscribeToPrivateResult(currentRequest.deviceSessionId);
-    subscribeToRequestStatus(currentRequest.requestId);
+    subscribeToPrivateResult(currentRequest.requestId, currentRequest.requestAccessToken);
+    subscribeToRequestStatus(currentRequest.requestId, currentRequest.requestAccessToken);
     startTicker();
     rerender();
   } catch {
@@ -64,9 +64,9 @@ async function requestScan() {
   }
 }
 
-function subscribeToRequestStatus(requestId: string) {
+function subscribeToRequestStatus(requestId: string, accessToken: string) {
   requestStream?.close();
-  requestStream = openRequestStatusStream(appConfig.backendUrl, requestId, {
+  requestStream = openRequestStatusStream(appConfig.backendUrl, requestId, accessToken, {
     onConnected: () => {
       connected = true;
       rerender();
@@ -137,9 +137,9 @@ function startTicker() {
   });
 }
 
-function subscribeToPrivateResult(deviceSessionId: string) {
+function subscribeToPrivateResult(requestId: string, accessToken: string) {
   resultStream?.close();
-  resultStream = openPrivateResultStream(appConfig.backendUrl, deviceSessionId, {
+  resultStream = openPrivateResultStream(appConfig.backendUrl, requestId, accessToken, {
     onConnected: () => {
       connected = true;
       rerender();
@@ -192,7 +192,7 @@ async function cancelRequest() {
   state = "canceling";
   rerender();
   try {
-    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "cancel");
+    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, currentRequest.requestAccessToken, "cancel");
     resetRequestState();
   } catch {
     connected = false;
@@ -204,7 +204,7 @@ async function cancelRequest() {
 async function wrongPatientRequest() {
   if (!currentRequest) return;
   try {
-    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, "wrong_patient");
+    await rejectScanRequest(appConfig.backendUrl, currentRequest.requestId, currentRequest.requestAccessToken, "wrong_patient");
     resetRequestState();
   } catch {
     connected = false;

@@ -17,7 +17,6 @@ export async function publishStationStatus(stationId: string, status: StationLif
   const active = request ?? getActiveRequest(station);
   const payload: StationStatusEvent["payload"] = {
     stationId,
-    activeRequestId: active?.requestId,
     turnCode: active?.turnCode,
     status,
     expiresAt: active?.expiresAt,
@@ -31,9 +30,7 @@ export async function publishStationStatus(stationId: string, status: StationLif
     KAFKA_TOPICS.stationStatus(stationId),
     envelope({
       eventType: "station.status.updated",
-      requestId: active?.requestId,
       stationId,
-      deviceSessionId: active?.deviceSessionId,
       payload
     }),
     stationId

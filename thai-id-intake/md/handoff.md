@@ -23,17 +23,17 @@ thai-id-intake/
 ## Main Workflow
 
 1. Nurse taps `Scan ID Card` on iPad.
-2. Backend creates a request with `requestId`, `deviceSessionId`, `stationId`, and a 5-character `turnCode`.
+2. Backend creates a request with `requestId`, backend-owned `deviceSessionId`, request access token, `stationId`, and a 5-character `turnCode`.
 3. If reader/station is ready, backend activates the request; otherwise the request queues.
 4. Queued requests do not burn active scan TTL. They can expire from queue after `QUEUED_REQUEST_MAX_AGE_SECONDS`.
 5. Station display shows only safe data: active code, timing, queue depth, reader state.
 6. Nurse visually confirms iPad code matches station display code.
 7. Reader-agent reads the SmartCard for the active request.
-8. Backend validates active `requestId`, looks up `deviceSessionId`, and sends full data only to that private iPad session.
+8. Backend validates active `requestId`, looks up `deviceSessionId`, and sends full data only to the request-token-protected private iPad stream.
 9. Nurse UI displays patient fields and `photoAsBase64Uri`, then auto-clears after `RESULT_AUTO_CLEAR_SECONDS`.
 10. Station goes delivered -> cooldown -> next queued request or neutral.
 
-The 5-character code is only for humans. System routing uses `requestId + deviceSessionId`.
+The 5-character code is only for humans. Browser-private routing uses `requestId + requestAccessToken`; Kafka-internal result topics still use backend-owned `deviceSessionId`.
 
 ## Apps
 
@@ -42,6 +42,7 @@ The 5-character code is only for humans. System routing uses `requestId + device
 - Express API and SSE bridge.
 - Kafka coordinator and scan transaction authority.
 - Maintains in-memory station queue/state.
+- On restart, publishes neutral safe station state; active scans are invalid and nurses must rescan.
 - Handles station lifecycle: `neutral`, `queued`, `active`, `reading`, `delivered`, `cooldown`, `canceled`, `expired`, `failed`, `misrouted`.
 - Aggregates reader heartbeat into safe station readiness.
 - Exposes:
@@ -50,7 +51,7 @@ The 5-character code is only for humans. System routing uses `requestId + device
   - `GET /api/stations/:stationId/status/events`
   - `POST /api/scan-requests`
   - `GET /api/scan-requests/:requestId/events`
-  - `GET /api/scan-results/:deviceSessionId/events`
+  - `GET /api/scan-requests/:requestId/result-events?accessToken=...`
   - `POST /api/scan-requests/:requestId/rejections`
 
 ### `apps/reader-agent`
@@ -102,7 +103,7 @@ The 5-character code is only for humans. System routing uses `requestId + device
 | `station.status.{stationId}` | No | Backend publishes safe station state: code, queue, expiry, cooldown, canceled/expired/retry prompts. |
 | `reader.status.{stationId}` | No | Reader-agent publishes heartbeat and safe reader lifecycle. |
 | `reader.card-read` | Yes | Reader-agent publishes full SmartCard payload for backend validation. |
-| `scan-result.{deviceSessionId}` | Yes | Backend publishes private result for one iPad/device session. |
+| `scan-result.{deviceSessionId}` | Yes | Backend publishes internal private result for one backend-owned device session. |
 | `scan.rejections` | No card payload | Cancel and wrong-patient/misroute events. |
 | `audit.scan-events` | No raw card/photo | Operational audit trail without raw card payload/photo. |
 
@@ -140,10 +141,15 @@ Do not run `npm run build` unless the project owner explicitly approves.
 ```env
 KAFKA_BROKERS=localhost:9092
 BACKEND_PORT=3001
+ALLOWED_STATION_IDS=A01
+CORS_ALLOWED_ORIGINS=
 SCAN_REQUEST_TTL_SECONDS=90
 STATION_COOLDOWN_MS=3000
 QUEUED_REQUEST_MAX_AGE_SECONDS=300
 RESULT_AUTO_CLEAR_SECONDS=120
+MAX_QUEUE_DEPTH_PER_STATION=10
+SCAN_REQUEST_RATE_LIMIT_WINDOW_MS=60000
+SCAN_REQUEST_RATE_LIMIT_MAX=20
 STATION_ID=A01
 READER_ID=A01-PC-01
 READER_HEARTBEAT_MS=10000
@@ -151,6 +157,7 @@ INSERT_CARD_DELAY_MS=500
 READ_TIMEOUT_MS=5000
 VITE_BACKEND_URL=http://localhost:3001
 VITE_STATION_ID=A01
+VITE_NURSE_ID=unassigned-nurse
 VITE_RESULT_AUTO_CLEAR_SECONDS=120
 ```
 
@@ -187,9 +194,10 @@ No `npm run build` was run.
 ## Known Caveats
 
 - State is currently in memory. Restarting backend clears active queues/results.
-- Auth/session hardening is deferred until hospital nurseID/device-auth rules are known.
+- Hospital SSO/device management remains future work; v1 production hardening uses backend-issued request access tokens.
 - `dev:all` is local-only and not part of production.
 - `kafbat/kafka-ui:main` is local testing only and should be removed from deployment.
+- Production Kafka should use broker/network ACLs, bounded retention for PII topics, and disabled topic auto-creation where possible.
 - `node-gyp`/`pcsclite` Windows setup can be fragile. See `md/tools.md`.
 - The reader library package main path has quirks, so reader-agent imports `thai-id-card-reader/build/index.js`.
 - Real hardware behavior for card inserted/removed depends on what PC/SC/library events expose.

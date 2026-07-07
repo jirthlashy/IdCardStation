@@ -81,8 +81,8 @@ function expiryText(currentRequest?: ScanRequestView) {
 
 function resultHtml(result: PrivateScanResultView) {
   const card = result.card;
-  const photo = card.photoAsBase64Uri
-    ? `<img class="id-photo" src="${card.photoAsBase64Uri}" alt="Thai ID card portrait" />`
+  const photo = isSafePhotoDataUri(card.photoAsBase64Uri)
+    ? `<img class="id-photo" src="${escapeHtml(card.photoAsBase64Uri)}" alt="Thai ID card portrait" />`
     : `<div class="id-photo placeholder">No photo</div>`;
 
   return `
@@ -100,4 +100,9 @@ function resultHtml(result: PrivateScanResultView) {
       </div>
     </section>
   `;
+}
+
+export function isSafePhotoDataUri(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  return /^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/i.test(value);
 }

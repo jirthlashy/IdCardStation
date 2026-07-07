@@ -3,13 +3,14 @@ import { PrivateScanResultView, ReadinessView, RequestStatusUpdate } from "../st
 export function openRequestStatusStream(
   backendUrl: string,
   requestId: string,
+  accessToken: string,
   handlers: {
     onConnected: () => void;
     onStatus: (update: RequestStatusUpdate) => void;
     onError: () => void;
   }
 ) {
-  const stream = new EventSource(`${backendUrl}/api/scan-requests/${requestId}/events`);
+  const stream = new EventSource(`${backendUrl}/api/scan-requests/${requestId}/events?accessToken=${encodeURIComponent(accessToken)}`);
   stream.addEventListener("connected", handlers.onConnected);
   stream.addEventListener("request-status", (event) => {
     handlers.onStatus(JSON.parse((event as MessageEvent).data));
@@ -39,14 +40,15 @@ export function openStationReadinessStream(
 
 export function openPrivateResultStream(
   backendUrl: string,
-  deviceSessionId: string,
+  requestId: string,
+  accessToken: string,
   handlers: {
     onConnected: () => void;
     onResult: (result: PrivateScanResultView) => void;
     onError: () => void;
   }
 ) {
-  const stream = new EventSource(`${backendUrl}/api/scan-results/${deviceSessionId}/events`);
+  const stream = new EventSource(`${backendUrl}/api/scan-requests/${requestId}/result-events?accessToken=${encodeURIComponent(accessToken)}`);
   stream.addEventListener("connected", handlers.onConnected);
   stream.addEventListener("scan-result", (event) => {
     handlers.onResult(JSON.parse((event as MessageEvent).data));

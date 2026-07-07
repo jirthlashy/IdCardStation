@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import {
   isReaderReadyState,
   ReaderStatusEvent,
@@ -19,6 +20,25 @@ export type StationRuntime = {
 export const requests = new Map<string, ScanRequest>();
 export const stations = new Map<string, StationRuntime>();
 export const lastReaderStatusByStation = new Map<string, ReaderStatusEvent["payload"]>();
+export const requestAccessTokenHashes = new Map<string, string>();
+
+export function hashRequestAccessToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function storeRequestAccessToken(requestId: string, token: string) {
+  requestAccessTokenHashes.set(requestId, hashRequestAccessToken(token));
+}
+
+export function verifyRequestAccessToken(requestId: string, token: unknown): boolean {
+  if (typeof token !== "string" || token.length === 0) return false;
+  const expected = requestAccessTokenHashes.get(requestId);
+  if (!expected) return false;
+  const actual = hashRequestAccessToken(token);
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const actualBuffer = Buffer.from(actual, "hex");
+  return expectedBuffer.length === actualBuffer.length && timingSafeEqual(expectedBuffer, actualBuffer);
+}
 
 export function getStation(stationId: string): StationRuntime {
   const existing = stations.get(stationId);
@@ -55,7 +75,6 @@ export function getStationReadiness(stationId: string): StationReadiness {
     readerAlive,
     readerReady,
     lastReaderSeenAt,
-    activeRequestId: active?.requestId,
     activeTurnCode: active?.turnCode,
     activeExpiresAt: active?.expiresAt,
     cooldownUntil: station.cooldownUntil,

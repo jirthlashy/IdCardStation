@@ -3,10 +3,23 @@ export const KAFKA_TOPICS = {
   readerCardRead: "reader.card-read",
   scanRejections: "scan.rejections",
   auditScanEvents: "audit.scan-events",
-  stationStatus: (stationId: string) => `station.status.${stationId}`,
-  readerStatus: (stationId: string) => `reader.status.${stationId}`,
-  privateScanResult: (deviceSessionId: string) => `scan-result.${deviceSessionId}`
+  stationStatus: (stationId: string) => `station.status.${assertKafkaTopicSuffix(stationId)}`,
+  readerStatus: (stationId: string) => `reader.status.${assertKafkaTopicSuffix(stationId)}`,
+  privateScanResult: (deviceSessionId: string) => `scan-result.${assertKafkaTopicSuffix(deviceSessionId)}`
 } as const;
+
+export const SAFE_TOPIC_SUFFIX_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
+
+export function isSafeTopicSuffix(value: string): boolean {
+  return SAFE_TOPIC_SUFFIX_PATTERN.test(value);
+}
+
+export function assertKafkaTopicSuffix(value: string): string {
+  if (!isSafeTopicSuffix(value)) {
+    throw new Error("Unsafe Kafka topic suffix");
+  }
+  return value;
+}
 
 export type ScanRequestStatus =
   | "created"
@@ -111,6 +124,7 @@ export interface CreateScanRequestInput {
 
 export interface CreateScanRequestResponse {
   requestId: string;
+  requestAccessToken: string;
   deviceSessionId: string;
   stationId: string;
   turnCode: string;
@@ -122,7 +136,6 @@ export interface CreateScanRequestResponse {
 
 export interface SafeStationStatus {
   stationId: string;
-  activeRequestId?: string;
   turnCode?: string;
   status: StationLifecycleStatus;
   readerState?: ReaderState;
@@ -149,7 +162,6 @@ export interface StationReadiness {
   readerAlive: boolean;
   readerReady: boolean;
   lastReaderSeenAt?: string;
-  activeRequestId?: string;
   activeTurnCode?: string;
   activeExpiresAt?: string;
   cooldownUntil?: string;

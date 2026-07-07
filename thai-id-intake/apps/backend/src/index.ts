@@ -9,7 +9,17 @@ import { getStationReadiness, stations } from "./station/stationStore.js";
 
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || backendConfig.corsAllowedOrigins.length === 0 || backendConfig.corsAllowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error("CORS origin is not allowed"));
+    }
+  })
+);
 app.use(express.json());
 registerRoutes(app);
 

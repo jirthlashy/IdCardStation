@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 const requiredString = z.string().trim().min(1);
+const safeTopicSuffix = z.string().trim().regex(/^[A-Za-z0-9._-]{1,80}$/);
 
 export const readerEnvSchema = z.object({
-  STATION_ID: z.string().trim().min(1).default("A01"),
+  STATION_ID: safeTopicSuffix.default("A01"),
   KAFKA_BROKERS: z
     .string()
     .trim()
@@ -50,19 +51,16 @@ export const scanRequestCreatedEventSchema = kafkaEnvelopeBaseSchema.extend({
 
 export const stationStatusEventSchema = kafkaEnvelopeBaseSchema.extend({
   eventType: z.literal("station.status.updated"),
-  payload: z
-    .object({
-      stationId: requiredString,
-      status: requiredString,
-      activeRequestId: z.string().optional(),
-      turnCode: z.string().optional(),
-      expiresAt: z.string().optional(),
-      cooldownUntil: z.string().optional(),
-      queueDepth: z.number(),
-      message: z.string().optional(),
-      updatedAt: requiredString
-    })
-    .passthrough()
+  payload: z.object({
+    stationId: requiredString,
+    status: requiredString,
+    turnCode: z.string().optional(),
+    expiresAt: z.string().optional(),
+    cooldownUntil: z.string().optional(),
+    queueDepth: z.number(),
+    message: z.string().optional(),
+    updatedAt: requiredString
+  })
 });
 
 export function parseReaderEnv(env: NodeJS.ProcessEnv = process.env): ReaderEnv {

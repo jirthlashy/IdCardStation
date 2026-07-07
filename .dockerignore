@@ -1,0 +1,13 @@
+.git
+.deepsec
+.agents
+server-container/.env.server
+thai-id-intake/.env
+thai-id-intake/.env.*
+thai-id-intake/node_modules
+thai-id-intake/**/node_modules
+thai-id-intake/dist
+thai-id-intake/**/dist
+thai-id-intake/*.log
+thai-id-intake/dev-server.log
+thai-id-intake/dev-server.err.log
