@@ -2,14 +2,14 @@ import { KAFKA_TOPICS, ScanRequestCreatedEvent, StationStatusEvent } from "@thai
 import { readerConfig } from "../config/config.js";
 import { parseKafkaJson, scanRequestCreatedEventSchema, stationStatusEventSchema } from "../config/validation.js";
 import { consumer, ensureTopics, producer } from "./kafkaClient.js";
-import { publishReaderStatus } from "../reader/readerStatus.js";
+import { publishReaderHeartbeat, publishReaderStatus } from "../reader/readerStatus.js";
 import { clearActiveRequest, getActiveRequest, setActiveRequest } from "../state/state.js";
 
 export async function startKafka() {
   await ensureTopics();
   await producer.connect();
   setInterval(() => {
-    void publishReaderStatus(getActiveRequest() ? "heartbeat" : "waiting_for_request", getActiveRequest() ? "Reader heartbeat with active request" : "Reader heartbeat");
+    void publishReaderHeartbeat();
   }, readerConfig.heartbeatMs);
   await consumer.connect();
   await consumer.subscribe({ topic: KAFKA_TOPICS.scanRequests, fromBeginning: false });

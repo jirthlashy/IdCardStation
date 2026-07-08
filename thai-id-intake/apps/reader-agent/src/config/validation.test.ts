@@ -30,6 +30,10 @@ describe("reader-agent validation", () => {
     expect(() => parseReaderEnv({ STATION_ID: "bad/topic" })).toThrow("Invalid reader-agent environment");
   });
 
+  it("uses a conservative card insert delay by default", () => {
+    expect(parseReaderEnv({}).INSERT_CARD_DELAY_MS).toBe(2000);
+  });
+
   it("validates scan request and station status Kafka events", () => {
     expect(
       scanRequestCreatedEventSchema.parse({

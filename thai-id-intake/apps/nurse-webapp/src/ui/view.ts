@@ -34,7 +34,7 @@ export function render(view: ViewState, handlers: ViewHandlers) {
       </section>
       <section class="readiness ${view.readiness.readerReady ? "ready" : "offline"}">
         <div class="label">Station</div>
-        <div class="value">${escapeHtml(view.stationId)} ${view.readiness.readerReady ? "Ready" : "Reader offline"}</div>
+        <div class="value">${escapeHtml(view.stationId)} ${escapeHtml(readerLabel(view.readiness))}</div>
         <p>${escapeHtml(readinessText(view.connected, view.readiness))}</p>
       </section>
       ${view.result ? resultHtml(view.result) : ""}
@@ -71,6 +71,12 @@ function readinessText(connected: boolean, readiness: ReadinessView) {
   if (readiness.status === "cooldown") return `Station cooling down. Queue: ${readiness.queueDepth ?? 0}.`;
   if (readiness.status === "active" || readiness.status === "reading") return `Station busy. Queue: ${readiness.queueDepth ?? 0}.`;
   return `Queue: ${readiness.queueDepth ?? 0}.`;
+}
+
+function readerLabel(readiness: ReadinessView) {
+  if (readiness.readerReady) return "Ready";
+  if (readiness.readerAlive) return "Reader not ready";
+  return "Reader offline";
 }
 
 function expiryText(currentRequest?: ScanRequestView) {
