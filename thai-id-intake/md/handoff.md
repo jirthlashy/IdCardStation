@@ -136,6 +136,140 @@ npm run dev:station
 
 Do not run `npm run build` unless the project owner explicitly approves.
 
+## Current Deployment Packaging
+
+There are two deployment paths outside `thai-id-intake/`.
+
+### Manual Transfer Bundle
+
+`deploy-transfer-bundle-with-kafka/` is the current practical deployment bundle.
+
+```text
+deploy-transfer-bundle-with-kafka/
+  server/
+    backend/
+    kafka_2.13-4.3.1/
+    nurse-webapp/
+    station-display/
+    server.env
+    START_SERVER_JAVA.sh
+    STOP_SERVER_JAVA.sh
+    START_SERVER_PM2.sh
+    STOP_SERVER_PM2.sh
+    README.md
+  reader-agent/
+    app/
+    node_modules/
+    reader.env
+    START_READER_AGENT.ps1
+    Start Reader Agent.bat
+    README.md
+```
+
+Server side runs on Ubuntu/Linux. Reader side runs on the Windows PC connected to the smart card reader.
+
+The split is intentional:
+
+- `server/` contains Kafka, backend, and prebuilt static web apps.
+- `reader-agent/` contains the Windows reader runtime and its `node_modules`.
+- The reader runtime has been flattened for deployment: `reader-agent/app/index.js` is the entrypoint instead of the old nested `apps/reader-agent/dist/apps/reader-agent/src/index.js` path.
+- `START_READER_AGENT.ps1` prefers a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then falls back to `reader-agent/node.exe`, then system `node`.
+- `pcsclite` is a native addon. Its compiled `pcsclite.node` must match the Node ABI used to run the reader-agent. Current transfer bundle and dev workspace were rebuilt/tested for Node `v26.4.0`, ABI `147`, win32 x64.
+- Kafka UI is not included in this deployment bundle.
+
+The current real-server path is PM2:
+
+```bash
+cd deploy-transfer-bundle-with-kafka/server
+nano server.env
+bash START_SERVER_PM2.sh
+pm2 list
+pm2 logs
+```
+
+Stop PM2 deployment with:
+
+```bash
+bash STOP_SERVER_PM2.sh
+```
+
+Important `server.env` points:
+
+```env
+SERVER_IP=192.168.x.x
+KAFKA_PORT=9092
+BACKEND_PORT=3001
+NURSE_WEB_PORT=3000
+STATION_DISPLAY_PORT=3002
+MANAGE_UFW_RULES=true
+```
+
+Use a fixed `SERVER_IP` for real deployment. `SERVER_IP=auto` is only safe for quick VM testing because it may pick the wrong NIC/VPN/Docker address.
+
+The PM2 start script opens UFW ports for the configured nurse/backend/station/Kafka ports when UFW is active and `MANAGE_UFW_RULES=true`. It records only newly added ports in `.ufw-opened-ports`.
+
+The PM2 stop script removes only those recorded UFW rules. Existing UFW rules from other projects are left alone.
+
+If the browser from another PC cannot open `http://SERVER_IP:3000` but ping works, check:
+
+```bash
+pm2 list
+sudo ss -ltnp | grep -E ':3000|:3001|:3002|:9092'
+curl -I http://127.0.0.1:3000
+sudo ufw status
+```
+
+Ping only proves ICMP reachability. It does not prove TCP ports are open.
+
+### Server Container Wrapper
+
+`server-container/` is the container option. It is a wrapper around the runtime bundle, not a full source build.
+
+It runs:
+
+- `apache/kafka:4.3.1`
+- `node:20-bookworm-slim` for backend
+- `nginx:1.27-alpine` for nurse-webapp
+- `nginx:1.27-alpine` for station-display
+
+It expects a runtime bundle beside it, preferably:
+
+```text
+../deploy-transfer-bundle-with-kafka/server
+```
+
+The startup script auto-detects both split and older flat layouts and converts the runtime path to an absolute path before running Docker Compose. This fixed an earlier nginx `403 Forbidden` issue caused by old Compose handling relative volume paths poorly.
+
+Container start/stop:
+
+```bash
+cd server-container
+cp .env.server.example .env.server
+nano .env.server
+bash start-server-container.sh
+bash stop-server-container.sh
+```
+
+The Compose file uses `version: "2.4"` because the target Ubuntu Docker Compose was old and rejected top-level `name:`.
+
+### GitLab / Transfer Gotcha
+
+Current `.gitignore` ignores these deployment folders:
+
+```text
+deploy-transfer-bundle/
+deploy-transfer-bundle-with-kafka/
+server-container/
+```
+
+So a normal `git add .` will not publish the ready-to-run deployment bundle. If a new session says "clone from GitLab and deploy", first verify whether the deployment bundle actually exists in the clone:
+
+```bash
+ls deploy-transfer-bundle-with-kafka/server/START_SERVER_PM2.sh
+```
+
+If it is missing, either transfer the bundle separately, force-add intended deployment files, or build/package again on a machine that has dependencies.
+
 ## Key Env Defaults
 
 ```env
@@ -163,6 +297,15 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 
 ## Recent Changes To Remember
 
+- Created split deployment bundle: `deploy-transfer-bundle-with-kafka/server` and `deploy-transfer-bundle-with-kafka/reader-agent`.
+- Added one-click-ish reader startup scripts: `START_READER_AGENT.ps1` and `Start Reader Agent.bat`.
+- Flattened reader-agent deployment runtime to `reader-agent/app/` and removed the old nested TypeScript workspace `dist/apps/reader-agent/src` deployment path.
+- Rebuilt `pcsclite.node` for Node `v26.4.0` / ABI `147` in both the deploy reader bundle and dev `thai-id-intake/node_modules`.
+- Added server startup scripts for both Java/no-PM2 and PM2 modes.
+- Added PM2 UFW port management controlled by `MANAGE_UFW_RULES=true`.
+- Added `server-container/` Docker Compose wrapper for the server side.
+- Updated container Compose for old Docker Compose compatibility by using `version: "2.4"` and removing top-level `name:`.
+- Updated container startup to resolve runtime paths absolutely and auto-detect split/flat bundle layouts.
 - Heartbeat default changed from 5 seconds to 10 seconds.
 - Added `npm run dev:all`.
 - Added station readiness aggregation.
@@ -191,6 +334,15 @@ npm run lint -w @thai-id-intake/station-display
 
 No `npm run build` was run.
 
+Native reader checks passed after the Node update:
+
+```powershell
+node -e "require('pcsclite'); console.log('pcsclite loaded for ' + process.version + ' abi ' + process.versions.modules)"
+node -e "require('pcsclite'); console.log('dev pcsclite loaded for ' + process.version + ' abi ' + process.versions.modules)"
+```
+
+Both were verified on Node `v26.4.0` / ABI `147`; first in `deploy-transfer-bundle-with-kafka/reader-agent`, second in `thai-id-intake`.
+
 ## Known Caveats
 
 - State is currently in memory. Restarting backend clears active queues/results.
@@ -198,7 +350,11 @@ No `npm run build` was run.
 - `dev:all` is local-only and not part of production.
 - `kafbat/kafka-ui:main` is local testing only and should be removed from deployment.
 - Production Kafka should use broker/network ACLs, bounded retention for PII topics, and disabled topic auto-creation where possible.
-- `node-gyp`/`pcsclite` Windows setup can be fragile. See `md/tools.md`.
+- Built frontend assets have `VITE_BACKEND_URL` baked in. If the backend IP/port changes, rebuild the frontend before packaging or the pages may load but call the wrong backend.
+- On real servers with many projects, check port ownership before starting: `sudo ss -ltnp | grep -E ':3000|:3001|:3002|:9092'`.
+- PM2/UFW deployment may need sudo. If infra owns firewall policy, confirm before allowing/removing ports.
+- `node-gyp`/`pcsclite` Windows setup can be fragile. See `md/tools.md`. If Node changes, rebuild `pcsclite` for the new ABI before running dev reader-agent or packaging the transfer bundle.
+- Node 26 generated MSVC project flags for `pcsclite` that did not link cleanly with the local VS toolchain. The successful rebuild path was: configure with `node-gyp`, remove generated `-flto=thin` and `/opt:lldltojobs=2` from `pcsclite.vcxproj`, then run `node-gyp build`.
 - The reader library package main path has quirks, so reader-agent imports `thai-id-card-reader/build/index.js`.
 - Real hardware behavior for card inserted/removed depends on what PC/SC/library events expose.
 
