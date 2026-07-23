@@ -169,7 +169,8 @@ The split is intentional.
 - `deploy-transfer/server/backend/apps/backend/dist/index.js` is the backend entrypoint.
 - The reader runtime has been flattened for deployment: `reader-agent/app/index.js` is the entrypoint instead of the old nested `apps/reader-agent/dist/apps/reader-agent/src/index.js` path.
 - Normal reader startup and stop are both handled through the single visible `Thai ID Reader.bat` launcher.
-- The GUI writes `.reader-support/reader.env`, checks Kafka/Node/pcsclite, starts the reader hidden, and can tail `.reader-support/logs/reader-agent.log`.
+- The GUI writes `.reader-support/reader.env`, checks Kafka/Node/pcsclite, then exits. The CMD window starts the reader, shows live output, and owns reader-agent lifetime.
+- Reader-agent lifetime is intentionally tied to the CMD window: closing CMD stops reader-agent.
 - The hidden support scripts prefer a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then fall back to `reader-agent/node.exe`, then system `node`.
 - The tracked source for the Windows reader launcher lives in `thai-id-intake/apps/reader-agent/deploy/windows/`, including its app-owned sync script. Run `npm run sync:reader-launcher` from `thai-id-intake/` to refresh the deploy-transfer launcher files from that source.
 - `pcsclite` is a native addon. Its compiled `pcsclite.node` must match the Node ABI used to run the reader-agent. The current dev workspace uses Node `v26.4.0`, ABI `147`, win32 x64.

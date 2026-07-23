@@ -12,7 +12,9 @@ $rootNode = Join-Path $bundleDir "node.exe"
 
 function Write-LogLine {
   param([string] $Message)
-  Add-Content -LiteralPath $logFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
+  $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
+  Add-Content -LiteralPath $logFile -Value $line
+  Write-Host $line
 }
 
 function Load-EnvFile {
@@ -56,11 +58,9 @@ function Resolve-NodeExe {
 }
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-if (Test-Path -LiteralPath $logFile) {
-  Write-LogLine "Starting Thai ID reader-agent..."
-} else {
-  Set-Content -LiteralPath $logFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting Thai ID reader-agent..."
-}
+Set-Content -LiteralPath $pidFile -Value $PID -Encoding ASCII
+Set-Content -LiteralPath $logFile -Value "" -Encoding UTF8
+Write-LogLine "Starting Thai ID reader-agent..."
 
 try {
   Set-Location $bundleDir
@@ -78,8 +78,18 @@ try {
   Write-LogLine "Reader: $env:READER_ID"
   Write-LogLine ""
 
-  & $nodeExe $entrypoint *>> $logFile
-  $exitCode = $LASTEXITCODE
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $nodeExe $entrypoint 2>&1 | ForEach-Object {
+      $line = [string] $_
+      Add-Content -LiteralPath $logFile -Value $line
+      Write-Host $line
+    }
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   Write-LogLine "reader-agent exited with code $exitCode"
   exit $exitCode
 } catch {

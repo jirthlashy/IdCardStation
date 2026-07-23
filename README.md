@@ -200,7 +200,7 @@ cd thai-id-intake
 npm run sync:reader-launcher
 ```
 
-The GUI writes generated reader config to `.reader-support/reader.env`, checks Kafka reachability, checks Node/`pcsclite`, starts the reader-agent in the background, and can show live reader logs when kept open.
+The GUI writes generated reader config to `.reader-support/reader.env`, checks Kafka reachability, checks Node/`pcsclite`, then closes. The CMD window starts the reader-agent, shows live terminal output, and owns the reader lifetime.
 
 ## App Responsibilities
 

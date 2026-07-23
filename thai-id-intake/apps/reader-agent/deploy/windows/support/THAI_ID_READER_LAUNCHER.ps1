@@ -7,7 +7,6 @@ $supportDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $bundleDir = Split-Path -Parent $supportDir
 $envFile = Join-Path $supportDir "reader.env"
 $entrypoint = Join-Path $bundleDir "app/index.js"
-$runnerScript = Join-Path $supportDir "RUN_READER_AGENT_BACKGROUND.ps1"
 $stopScript = Join-Path $supportDir "STOP_READER_AGENT.ps1"
 $pidFile = Join-Path $supportDir ".reader-agent.pid"
 $logDir = Join-Path $supportDir "logs"
@@ -222,32 +221,7 @@ function Set-Status {
   $statusLabel.Text = $Message
 }
 
-function Append-TerminalLine {
-  param([string] $Message)
-  $terminalBox.AppendText($Message + [Environment]::NewLine)
-}
-
-function Refresh-TerminalFromLog {
-  if (-not (Test-Path -LiteralPath $logFile)) {
-    return
-  }
-
-  try {
-    $text = Get-Content -LiteralPath $logFile -Raw -ErrorAction Stop
-    if ($text.Length -gt 120000) {
-      $text = $text.Substring($text.Length - 120000)
-    }
-    if ($terminalBox.Text -ne $text) {
-      $terminalBox.Text = $text
-      $terminalBox.SelectionStart = $terminalBox.TextLength
-      $terminalBox.ScrollToCaret()
-    }
-  } catch {
-    # The runner may be writing while the GUI tails. Try again on the next timer tick.
-  }
-}
-
-function Start-ReaderAgent {
+function Prepare-ReaderAgentStart {
   param(
     [string] $ServerIp,
     [string] $KafkaPort,
@@ -298,33 +272,17 @@ function Start-ReaderAgent {
     ""
   ) -Encoding UTF8
 
-  $runnerArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$runnerScript`""
-  $process = Start-Process `
-    -FilePath "powershell.exe" `
-    -ArgumentList $runnerArguments `
-    -WorkingDirectory $bundleDir `
-    -WindowStyle Hidden `
-    -PassThru
-  Set-Content -LiteralPath $pidFile -Value $process.Id -Encoding ASCII
-
-  Start-Sleep -Seconds 2
-  $running = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
-  if (-not $running) {
-    $logTail = ""
-    if (Test-Path -LiteralPath $logFile) {
-      $logTail = (Get-Content -LiteralPath $logFile -Tail 20) -join "`r`n"
-    }
-    throw "Reader-agent did not stay running. $logTail"
-  }
+  Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
 }
 
 $initial = Resolve-InitialConfig
+$script:shouldStartReader = $false
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Thai ID Reader"
 $form.StartPosition = "CenterScreen"
-$form.Size = New-Object System.Drawing.Size(680, 620)
-$form.MinimumSize = New-Object System.Drawing.Size(680, 500)
+$form.Size = New-Object System.Drawing.Size(680, 430)
+$form.MinimumSize = New-Object System.Drawing.Size(680, 420)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 
 $titleLabel = New-Object System.Windows.Forms.Label
@@ -393,52 +351,34 @@ $stopButton.Size = New-Object System.Drawing.Size(100, 36)
 $form.Controls.Add($stopButton)
 
 $closeNowButton = New-Object System.Windows.Forms.Button
-$closeNowButton.Text = "Close Now"
+$closeNowButton.Text = "Close"
 $closeNowButton.Location = New-Object System.Drawing.Point(394, 330)
 $closeNowButton.Size = New-Object System.Drawing.Size(110, 36)
-$closeNowButton.Visible = $false
 $form.Controls.Add($closeNowButton)
 
-$keepOpenButton = New-Object System.Windows.Forms.Button
-$keepOpenButton.Text = "Keep Open"
-$keepOpenButton.Location = New-Object System.Drawing.Point(516, 330)
-$keepOpenButton.Size = New-Object System.Drawing.Size(110, 36)
-$keepOpenButton.Visible = $false
-$form.Controls.Add($keepOpenButton)
+function Set-ConfigFieldsEnabled {
+  param([bool] $Enabled)
 
-$terminalBox = New-Object System.Windows.Forms.TextBox
-$terminalBox.Location = New-Object System.Drawing.Point(28, 388)
-$terminalBox.Size = New-Object System.Drawing.Size(600, 160)
-$terminalBox.Multiline = $true
-$terminalBox.ScrollBars = "Vertical"
-$terminalBox.ReadOnly = $true
-$terminalBox.Font = New-Object System.Drawing.Font("Consolas", 9)
-$terminalBox.Visible = $false
-$form.Controls.Add($terminalBox)
+  $serverIpBox.Enabled = $Enabled
+  $kafkaPortBox.Enabled = $Enabled
+  $stationIdBox.Enabled = $Enabled
+  $readerIdBox.Enabled = $Enabled
+}
 
-$autoCloseSeconds = 8
-$autoCloseTimer = New-Object System.Windows.Forms.Timer
-$autoCloseTimer.Interval = 1000
-$autoCloseTimer.Add_Tick({
-  $script:autoCloseSeconds -= 1
-  if ($script:autoCloseSeconds -le 0) {
-    $autoCloseTimer.Stop()
-    $form.Close()
-    return
-  }
-  Set-Status "Reader running. Closing in $script:autoCloseSeconds seconds..." ([System.Drawing.Color]::FromArgb(22, 101, 52))
-})
+function Set-RunningControls {
+  param([bool] $IsRunning)
 
-$tailTimer = New-Object System.Windows.Forms.Timer
-$tailTimer.Interval = 1000
-$tailTimer.Add_Tick({ Refresh-TerminalFromLog })
+  $startButton.Enabled = -not $IsRunning
+  $testButton.Enabled = -not $IsRunning
+  Set-ConfigFieldsEnabled (-not $IsRunning)
+}
 
 $startButton.Add_Click({
   $startButton.Enabled = $false
   $testButton.Enabled = $false
   try {
     Set-Status "Validating reader setup..."
-    Start-ReaderAgent `
+    Prepare-ReaderAgentStart `
       -ServerIp $serverIpBox.Text.Trim() `
       -KafkaPort $kafkaPortBox.Text.Trim() `
       -StationId $stationIdBox.Text.Trim() `
@@ -447,16 +387,16 @@ $startButton.Add_Click({
       -InsertCardDelayMs $initial.InsertCardDelayMs `
       -ReadTimeoutMs $initial.ReadTimeoutMs
 
-    $script:autoCloseSeconds = 8
-    Set-Status "Reader running. Closing in 8 seconds..." ([System.Drawing.Color]::FromArgb(22, 101, 52))
-    $closeNowButton.Visible = $true
-    $keepOpenButton.Visible = $true
-    $autoCloseTimer.Start()
+    $script:shouldStartReader = $true
+    Set-Status "Preflight passed. Starting reader in CMD..." ([System.Drawing.Color]::FromArgb(22, 101, 52))
+    $form.Close()
   } catch {
     Set-Status $_.Exception.Message ([System.Drawing.Color]::FromArgb(185, 28, 28))
+    Set-RunningControls $false
   } finally {
-    $startButton.Enabled = $true
-    $testButton.Enabled = $true
+    if (-not (Get-ReaderProcess)) {
+      Set-RunningControls $false
+    }
   }
 })
 
@@ -484,7 +424,7 @@ $testButton.Add_Click({
 $stopButton.Add_Click({
   try {
     Stop-ExistingReader
-    $autoCloseTimer.Stop()
+    Set-RunningControls $false
     Set-Status "Reader-agent stopped."
   } catch {
     Set-Status $_.Exception.Message ([System.Drawing.Color]::FromArgb(185, 28, 28))
@@ -492,30 +432,20 @@ $stopButton.Add_Click({
 })
 
 $closeNowButton.Add_Click({
-  $autoCloseTimer.Stop()
   $form.Close()
-})
-
-$keepOpenButton.Add_Click({
-  $autoCloseTimer.Stop()
-  $terminalBox.Visible = $true
-  $form.Height = 660
-  Refresh-TerminalFromLog
-  $tailTimer.Start()
-  Set-Status "Reader running. Live output is shown below." ([System.Drawing.Color]::FromArgb(22, 101, 52))
 })
 
 $form.Add_Shown({
   if (Get-ReaderProcess) {
+    Set-RunningControls $true
     Set-Status "Reader-agent is already running." ([System.Drawing.Color]::FromArgb(22, 101, 52))
-    $keepOpenButton.Visible = $true
-    $closeNowButton.Visible = $true
   }
 })
 
-$form.Add_FormClosing({
-  $autoCloseTimer.Stop()
-  $tailTimer.Stop()
-})
-
 [void] $form.ShowDialog()
+
+if ($script:shouldStartReader) {
+  exit 0
+}
+
+exit 2

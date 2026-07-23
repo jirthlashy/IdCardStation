@@ -6,14 +6,24 @@ import { publishReaderHeartbeat, publishReaderStatus } from "../reader/readerSta
 import { clearActiveRequest, getActiveRequest, setActiveRequest } from "../state/state.js";
 
 export async function startKafka() {
+  console.log(`[reader-agent] Connecting to Kafka brokers: ${readerConfig.brokers.join(", ")}`);
   await ensureTopics();
+  console.log("[reader-agent] Kafka topics ready");
   await producer.connect();
+  console.log("[reader-agent] Kafka producer connected");
+  await publishReaderHeartbeat();
+  console.log("[reader-agent] Initial heartbeat published");
   setInterval(() => {
-    void publishReaderHeartbeat();
+    void publishReaderHeartbeat().catch((error) => {
+      console.error(`[reader-agent] heartbeat publish failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }, readerConfig.heartbeatMs);
+  console.log("[reader-agent] Kafka heartbeat loop started");
+  console.log("[reader-agent] Connecting Kafka consumer");
   await consumer.connect();
   await consumer.subscribe({ topic: KAFKA_TOPICS.scanRequests, fromBeginning: false });
   await consumer.subscribe({ topic: KAFKA_TOPICS.stationStatus(readerConfig.stationId), fromBeginning: false });
+  console.log("[reader-agent] Kafka consumer subscribed");
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       if (!message.value) return;
@@ -35,4 +45,5 @@ export async function startKafka() {
       }
     }
   });
+  console.log("[reader-agent] Kafka consumer running");
 }
