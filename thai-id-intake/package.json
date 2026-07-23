@@ -16,7 +16,8 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "npm run build --workspaces"
+    "build": "npm run build --workspaces",
+    "sync:reader-launcher": "node scripts/sync-reader-windows-launcher.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

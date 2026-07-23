@@ -151,9 +151,12 @@ deploy-transfer/
   reader-agent/
     app/
     node_modules/
-    reader.env
-    START_READER_AGENT.ps1
-    Start Reader Agent.bat
+    .reader-support/
+      reader.env
+      THAI_ID_READER_LAUNCHER.ps1
+      RUN_READER_AGENT_BACKGROUND.ps1
+      STOP_READER_AGENT.ps1
+    Thai ID Reader.bat
     README.md
 ```
 
@@ -165,7 +168,10 @@ The split is intentional.
 - `reader-agent/` contains the Windows reader runtime, `app/index.js`, and its `node_modules`.
 - `deploy-transfer/server/backend/apps/backend/dist/index.js` is the backend entrypoint.
 - The reader runtime has been flattened for deployment: `reader-agent/app/index.js` is the entrypoint instead of the old nested `apps/reader-agent/dist/apps/reader-agent/src/index.js` path.
-- `START_READER_AGENT.ps1` prefers a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then falls back to `reader-agent/node.exe`, then system `node`.
+- Normal reader startup and stop are both handled through the single visible `Thai ID Reader.bat` launcher.
+- The GUI writes `.reader-support/reader.env`, checks Kafka/Node/pcsclite, starts the reader hidden, and can tail `.reader-support/logs/reader-agent.log`.
+- The hidden support scripts prefer a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then fall back to `reader-agent/node.exe`, then system `node`.
+- The tracked source for the Windows reader launcher lives in `thai-id-intake/apps/reader-agent/deploy/windows/`. Run `npm run sync:reader-launcher` from `thai-id-intake/` to refresh the deploy-transfer launcher files from that source.
 - `pcsclite` is a native addon. Its compiled `pcsclite.node` must match the Node ABI used to run the reader-agent. The current dev workspace uses Node `v26.4.0`, ABI `147`, win32 x64.
 - The current `deploy-transfer/reader-agent` folder does not include `runtime/node/node.exe`; if the reader PC uses system Node, verify the system Node ABI matches the packaged `pcsclite` build.
 - Kafka UI is not included in the transfer bundle.
@@ -261,7 +267,9 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 - Current docs were moved to the repo root: `README.md`, `DEVELOPER_CONTEXT.md`, `handoff.md`, and `PCSC_NATIVE_ADDON_TROUBLESHOOTING.md`.
 - Removed the old `thai-id-intake/md/` folder and Mermaid `.mmd` notes.
 - Current manual transfer bundle is `deploy-transfer/server` and `deploy-transfer/reader-agent`.
-- Added one-click-ish reader startup scripts: `START_READER_AGENT.ps1` and `Start Reader Agent.bat`.
+- Added reader GUI launcher and stop script for non-coder reader PC operators.
+- Consolidated reader startup/stop through one visible launcher: `deploy-transfer/reader-agent/Thai ID Reader.bat`. Internal PowerShell scripts and generated config live under hidden `.reader-support/`.
+- Added tracked reader launcher source under `thai-id-intake/apps/reader-agent/deploy/windows/` and a `sync:reader-launcher` script to copy it into the ignored transfer bundle.
 - Flattened reader-agent deployment runtime to `reader-agent/app/` and removed the old nested TypeScript workspace `dist/apps/reader-agent/src` deployment path.
 - Flattened backend build/deploy output to `apps/backend/dist/index.js`.
 - Dev workspace currently runs on Node `v26.4.0` / ABI `147`.
