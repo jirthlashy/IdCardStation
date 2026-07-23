@@ -14,6 +14,12 @@ export const readerEnvSchema = z.object({
   INSERT_CARD_DELAY_MS: z.coerce.number().int().nonnegative().default(2000),
   READ_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   READER_HEARTBEAT_MS: z.coerce.number().int().positive().default(10000),
+  ENABLE_DEMO_COMMANDS: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .optional()
+    .transform((value) => value === "true" || value === "1" || value === "yes"),
   READER_ID: z.string().trim().min(1).optional()
 });
 

@@ -25,6 +25,13 @@ describe("reader-agent validation", () => {
     });
   });
 
+  it("keeps demo stdin commands disabled unless explicitly enabled", () => {
+    expect(parseReaderEnv({}).ENABLE_DEMO_COMMANDS).toBe(false);
+    expect(parseReaderEnv({ ENABLE_DEMO_COMMANDS: "true" }).ENABLE_DEMO_COMMANDS).toBe(true);
+    expect(parseReaderEnv({ ENABLE_DEMO_COMMANDS: "1" }).ENABLE_DEMO_COMMANDS).toBe(true);
+    expect(parseReaderEnv({ ENABLE_DEMO_COMMANDS: "yes" }).ENABLE_DEMO_COMMANDS).toBe(true);
+  });
+
   it("rejects invalid env numbers", () => {
     expect(() => parseReaderEnv({ READ_TIMEOUT_MS: "0" })).toThrow("Invalid reader-agent environment");
     expect(() => parseReaderEnv({ STATION_ID: "bad/topic" })).toThrow("Invalid reader-agent environment");

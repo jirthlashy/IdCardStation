@@ -2,4 +2,4 @@
 server-container/.env.server
 server-container/
 deploy-transfer/ 
-
+*.zip

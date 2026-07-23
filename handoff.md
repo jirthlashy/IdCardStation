@@ -63,7 +63,7 @@ The 5-character code is only for humans. Browser-private routing uses `requestId
   - reader heartbeat every `READER_HEARTBEAT_MS` milliseconds, currently default `10000`.
   - safe reader states.
   - full card-read payload only to `reader.card-read`.
-- Demo stdin commands:
+- Demo stdin commands are disabled by default. For local testing only, set `ENABLE_DEMO_COMMANDS=true` to enable:
   - `demo-read`
   - `demo-card-in`
   - `demo-card-out`
@@ -249,6 +249,7 @@ READER_ID=A01-PC-01
 READER_HEARTBEAT_MS=10000
 INSERT_CARD_DELAY_MS=2000
 READ_TIMEOUT_MS=5000
+ENABLE_DEMO_COMMANDS=false
 VITE_BACKEND_URL=http://localhost:3001
 VITE_STATION_ID=A01
 VITE_NURSE_ID=unassigned-nurse
@@ -326,10 +327,10 @@ Both were verified on Node `v26.4.0` / ABI `147`; one check was in the transfer 
    - Stop reader-agent.
    - Confirm nurse shows reader offline and scan is disabled.
    - Restart reader-agent and confirm readiness recovers after heartbeat.
-3. Retry test:
+3. Retry test, with `ENABLE_DEMO_COMMANDS=true` in local reader-agent env:
    - Use `demo-read-error`.
    - Confirm station and nurse show reinsert-card message with same code.
-4. Private result test:
+4. Private result test, with `ENABLE_DEMO_COMMANDS=true` in local reader-agent env:
    - Use `demo-read`.
    - Confirm result appears only on matching iPad session.
    - Confirm photo auto-clears.

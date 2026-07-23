@@ -122,6 +122,7 @@ READER_ID=A01-PC-01
 INSERT_CARD_DELAY_MS=2000
 READ_TIMEOUT_MS=5000
 READER_HEARTBEAT_MS=10000
+ENABLE_DEMO_COMMANDS=false
 QUEUED_REQUEST_MAX_AGE_SECONDS=300
 RESULT_AUTO_CLEAR_SECONDS=120
 MAX_QUEUE_DEPTH_PER_STATION=10
@@ -197,6 +198,7 @@ Kafka UI:       http://localhost:8080
 - Publishes safe card lifecycle/retry states where available: `card_inserted`, `card_removed`, and `read_failed_retryable`.
 - Keeps the same active request after retryable read failures so a nurse does not need to request a new code.
 - Clears active request on station lifecycle updates such as canceled, expired, delivered, cooldown, or neutral.
+- Demo stdin commands are disabled by default. Use `ENABLE_DEMO_COMMANDS=true` only for local testing.
 
 ### Nurse Webapp
 

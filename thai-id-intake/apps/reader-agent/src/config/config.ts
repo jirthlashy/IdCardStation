@@ -7,7 +7,8 @@ export const readerConfig = {
   brokers: env.KAFKA_BROKERS,
   insertCardDelayMs: env.INSERT_CARD_DELAY_MS,
   readTimeoutMs: env.READ_TIMEOUT_MS,
-  heartbeatMs: env.READER_HEARTBEAT_MS
+  heartbeatMs: env.READER_HEARTBEAT_MS,
+  enableDemoCommands: env.ENABLE_DEMO_COMMANDS
 };
 
 export const readerId = env.READER_ID ?? `${readerConfig.stationId}-PC-01`;
