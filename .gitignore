@@ -1,7 +1,5 @@
 .deepsec/
 server-container/.env.server
 server-container/
-.zip
-oldziparchive/
-deploy-transfer-bundle/ 
-deploy-transfer-bundle-with-kafka/ 
+deploy-transfer/ 
+

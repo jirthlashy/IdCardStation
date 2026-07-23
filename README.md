@@ -7,15 +7,34 @@ Kafka carries the event flow. The backend owns scan authorization, station queue
 ## Project Structure
 
 ```text
+.
+  README.md
+  DEVELOPER_CONTEXT.md
+  handoff.md
+  PCSC_NATIVE_ADDON_TROUBLESHOOTING.md
+  thai-id-intake/
+    apps/
+      backend/          # Scan request API, station queue/state machine, Kafka coordinator
+      reader-agent/     # Windows PC/SC SmartCard reader service
+      nurse-webapp/     # iPad scan request and private result UI
+      station-display/  # A01 display for safe code/status only
+    packages/
+      shared-types/     # Shared TypeScript contracts and Kafka topic helpers
+```
+
+The npm workspace starts at `thai-id-intake/`.
+
+```text
 thai-id-intake/
   apps/
-    backend/          # Scan request API, station queue/state machine, Kafka coordinator
-    reader-agent/     # Windows PC/SC SmartCard reader service
-    nurse-webapp/     # iPad scan request and private result UI
-    station-display/  # A01 display for safe code/status only
   packages/
-    shared-types/     # Shared TypeScript contracts and Kafka topic helpers
 ```
+
+## Docs Map
+
+- `DEVELOPER_CONTEXT.md` explains architecture boundaries, security invariants, and change guidelines for the next developer.
+- `handoff.md` captures current project state, deployment notes, caveats, and recommended next tests.
+- `PCSC_NATIVE_ADDON_TROUBLESHOOTING.md` is the focused Windows `pcsclite` / `node-gyp` recovery guide for the reader-agent.
 
 ## Current Scan Flow
 
@@ -46,6 +65,7 @@ Hospital SSO/device management is still future work. The current production hard
 Start Kafka and local Kafka UI:
 
 ```powershell
+cd thai-id-intake
 docker compose up -d kafka kafka-ui
 ```
 
@@ -118,6 +138,7 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 Install dependencies:
 
 ```powershell
+cd thai-id-intake
 npm install
 ```
 
@@ -200,6 +221,8 @@ Kafka UI:       http://localhost:8080
 
 ## SmartCard Reader Notes
 
+For the full native-addon rebuild guide, see `PCSC_NATIVE_ADDON_TROUBLESHOOTING.md`.
+
 The reader dependency is installed from:
 
 ```text
@@ -208,14 +231,14 @@ github:goomgumx/thai-id-card-reader
 
 The app imports the package library entry directly because the package's declared `main` currently points at an older/demo path that expects `config.json`.
 
-If `pcsclite` cannot load, verify runtime:
+If `pcsclite` cannot load, first verify that the Node runtime matches the native addon build:
 
 ```powershell
 node -p "process.platform + ' ' + process.arch + ' node ' + process.version + ' abi ' + process.versions.modules"
 node -e "require('pcsclite'); console.log('pcsclite loaded')"
 ```
 
-Rebuild `pcsclite` with the Visual Studio x64 environment:
+Rebuild `pcsclite` with the same Windows x64 Node runtime that will run the reader-agent:
 
 ```powershell
 npm install --save-dev node-gyp@latest

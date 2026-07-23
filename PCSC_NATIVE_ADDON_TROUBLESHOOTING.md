@@ -1,4 +1,4 @@
-# Card Reader Native Tools Fix
+# PC/SC Native Addon Troubleshooting
 
 Use this when a Node.js smart-card project fails on Windows with a `pcsclite` native addon error such as:
 
@@ -15,13 +15,15 @@ From the project folder:
 node -p "process.platform + ' ' + process.arch + ' node ' + process.version + ' abi ' + process.versions.modules"
 ```
 
-Expected on this machine:
+Expected shape:
 
 ```txt
-win32 x64 node v20.x.x
+win32 x64 node vXX.x.x abi NNN
 ```
 
-Then test whether `pcsclite` can load:
+The exact Node version is less important than consistency: the Node runtime that starts `reader-agent` must match the ABI used when `pcsclite` was built.
+
+Then test whether `pcsclite` can load from the same project/bundle folder:
 
 ```powershell
 node -e "require('pcsclite'); console.log('pcsclite loaded')"
@@ -31,7 +33,7 @@ If it fails with `not a valid Win32 application`, rebuild the native addon.
 
 ## Easy Fix
 
-Install a newer `node-gyp` into the project:
+Install a current `node-gyp` into the project:
 
 ```powershell
 npm install --save-dev node-gyp@latest
@@ -49,22 +51,22 @@ Open or call the Visual Studio x64 build environment, then rebuild:
 cmd.exe /d /s /c "call ""C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"" && set npm_config_node_gyp=%CD%\node_modules\node-gyp\bin\node-gyp.js&& npm rebuild pcsclite"
 ```
 
-Verify:
+Verify with the same Node runtime that will run the reader-agent:
 
 ```powershell
 node -e "require('pcsclite'); console.log('pcsclite loaded')"
-npm start
+npm run dev:reader
 ```
 
 ## Why This Happens
 
 `pcsclite` includes a native `.node` binary. If it was installed for the wrong Node version, CPU architecture, or build environment, Node cannot load it.
 
-On this machine, the first rebuild failed because npm's bundled `node-gyp@10.1.0` did not recognize Visual Studio 2026 / version 18. Installing a newer project-local `node-gyp` and pointing npm at it fixed the rebuild.
+On this machine, one rebuild failed because npm's bundled `node-gyp@10.1.0` did not recognize the installed Visual Studio toolchain. Installing a newer project-local `node-gyp` and pointing npm at it fixed that part of the rebuild.
 
 ## Requirements
 
-- Node.js 20.x, preferably a newer 20.x release.
+- One chosen Windows x64 Node.js runtime for the reader-agent.
 - Visual Studio Build Tools or Visual Studio Community with `Desktop development with C++`.
 - Windows Smart Card service running.
 
@@ -90,9 +92,19 @@ Get-ChildItem 'C:\Program Files\Microsoft Visual Studio' -Recurse -Filter cl.exe
 
 If no `cl.exe` is found, install Visual Studio Build Tools with the `Desktop development with C++` workload.
 
-If `node-gyp@latest` warns about your Node version, upgrade Node to a newer `20.x` release and run:
+If `node-gyp@latest` warns about your Node version, use a supported Node release for the reader-agent and rebuild with that same runtime:
 
 ```powershell
 npm install
 npm rebuild pcsclite
 ```
+
+## Deployment Rule
+
+For transfer bundles, prefer including a portable Node runtime at:
+
+```text
+reader-agent/runtime/node/node.exe
+```
+
+If no bundled Node is included, the reader PC's system Node must have the same ABI that `node_modules/pcsclite` was built for.
