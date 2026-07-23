@@ -6,10 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(scriptDir, "..");
-const repoRoot = path.resolve(projectRoot, "..");
+const appRoot = path.resolve(scriptDir, "../..");
+const workspaceRoot = path.resolve(appRoot, "../..");
+const repoRoot = path.resolve(workspaceRoot, "..");
 
-const sourceRoot = path.join(projectRoot, "apps", "reader-agent", "deploy", "windows");
+const sourceRoot = scriptDir;
 const sourceSupport = path.join(sourceRoot, "support");
 const targetRoot = path.join(repoRoot, "deploy-transfer", "reader-agent");
 const targetSupport = path.join(targetRoot, ".reader-support");

@@ -15,7 +15,7 @@ Kafka carries the event flow. The backend owns scan authorization, station queue
   thai-id-intake/
     apps/
       backend/          # Scan request API, station queue/state machine, Kafka coordinator
-      reader-agent/     # Windows PC/SC SmartCard reader service
+      reader-agent/     # Windows PC/SC SmartCard reader service and GUI launcher source
       nurse-webapp/     # iPad scan request and private result UI
       station-display/  # A01 display for safe code/status only
     packages/
@@ -170,6 +170,37 @@ Kafka UI:       http://localhost:8080
 ```
 
 `npm run build` is allowed as a normal verification step.
+
+## Deployment Bundle
+
+`deploy-transfer/` is the current manual transfer bundle. It is ignored by git, so treat it as generated/operator-facing output rather than source of truth.
+
+- `deploy-transfer/server/` goes to the Ubuntu/server PC.
+- `deploy-transfer/reader-agent/` goes to the Windows PC connected to the smart card reader.
+- The reader PC operator should only need to double-click `Thai ID Reader.bat`.
+
+The Windows reader GUI launcher source is tracked under:
+
+```text
+thai-id-intake/apps/reader-agent/deploy/windows/
+```
+
+It packages into this operator-facing shape:
+
+```text
+deploy-transfer/reader-agent/
+  Thai ID Reader.bat
+  .reader-support/
+```
+
+Refresh the deploy copy from the tracked source with:
+
+```powershell
+cd thai-id-intake
+npm run sync:reader-launcher
+```
+
+The GUI writes generated reader config to `.reader-support/reader.env`, checks Kafka reachability, checks Node/`pcsclite`, starts the reader-agent in the background, and can show live reader logs when kept open.
 
 ## App Responsibilities
 
