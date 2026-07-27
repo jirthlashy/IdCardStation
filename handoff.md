@@ -145,9 +145,14 @@ instead of Kafka, `node_modules`, and build artifacts. On the target server,
 configure `server.env`, run `bash INSTALL_SERVER_DEPS.sh`, then run
 `bash START_SERVER_PM2.sh`. Its Windows `reader-agent/` contains a one-click
 bootstrap: `Thai ID Reader.bat` requests UAC, downloads verified Node, installs
-native build prerequisites when necessary, runs npm install, compiles
-`pcsclite`, and opens the existing GUI. The lite bootstrap vendors the small
-card-reader build input locally, so it does not depend on GitHub hosting.
+native build prerequisites when necessary, installs production npm packages,
+compiles `pcsclite`, and opens the existing GUI. The lite bootstrap vendors the
+small card-reader build input locally, so it does not depend on GitHub hosting.
+
+Choose the full reader for a restricted or offline reader PC. Choose the lite
+reader for a connected PC where an administrator can approve the one-time
+installation. The full reader is about 128 MiB; the lite reader is about
+0.08 MiB before its first-run downloads.
 
 ```text
 deploy-transfer/
@@ -175,6 +180,24 @@ deploy-transfer/
     README.md
 ```
 
+The lite reader has this intentionally smaller shape before first use:
+
+```text
+deploy-transfer-lite/reader-agent/
+  Thai ID Reader.bat
+  app/
+  package.json
+  package-lock.json
+  .reader-bootstrap/vendor/
+  .reader-support/
+    INSTALL_READER.ps1
+```
+
+Do not distribute a lite reader with generated `runtime/`, `node_modules/`,
+`.reader-support/reader.env`, logs, PID files, or card data. The installer
+creates only the required runtime files on the target PC and preserves
+`reader.env` during a repair.
+
 Server side runs on Ubuntu/Linux. Reader side runs on the Windows PC connected to the smart card reader.
 
 The split is intentional.
@@ -192,6 +215,16 @@ The split is intentional.
 - `deploy-transfer/reader-agent` includes `runtime/node/node.exe` and the
   matching native addon for offline use. `deploy-transfer-lite/reader-agent`
   deliberately omits both before its first run and installs them locally.
+- The lite installer downloads the pinned Node `v26.4.0` Windows x64 ZIP from
+  `nodejs.org` and verifies SHA-256 before extraction. It uses `winget` for
+  Python and C++ Build Tools only when they are missing.
+- The lite installer runs `npm ci --omit=dev --ignore-scripts`, then invokes
+  `node-gyp` explicitly to build `pcsclite`. It lets node-gyp select the
+  installed Visual Studio version; do not force `msvs_version=2022`, because
+  the tested Windows machine used Visual Studio 2026 with the C++ toolset.
+- The installer applies the known Node 26 MSVC project adjustment before the
+  native build. If bootstrap fails, its elevated PowerShell window and parent
+  CMD window now remain open so the operator can capture the actual error.
 - Kafka UI is not included in the transfer bundle.
 
 The current real-server path is PM2:
@@ -244,6 +277,7 @@ Current `.gitignore` ignores the deployment bundle:
 
 ```text
 deploy-transfer/
+deploy-transfer-lite/
 ```
 
 So a normal `git add .` will not publish the ready-to-run deployment bundle. If a new session says "clone from GitLab and deploy", first verify whether the deployment bundle actually exists in the clone:
@@ -295,8 +329,12 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 - Added PM2 UFW port management controlled by `MANAGE_UFW_RULES=true`.
 - Split reader delivery into a full offline bundle and a lite online bootstrap.
   Full carries Node `v26.4.0` / ABI `147` and prebuilt `pcsclite`; lite uses a
-  checksum-verified Node download, UAC-assisted build prerequisites, and
-  `npm ci --omit=dev` on the target reader PC.
+  checksum-verified Node download, UAC-assisted build prerequisites,
+  `npm ci --omit=dev --ignore-scripts`, and an explicit `node-gyp` build on
+  the target reader PC.
+- Lite bootstrap now keeps installation failures visible instead of closing the
+  PowerShell window immediately. It was corrected to support a detected Visual
+  Studio 2026 C++ toolset rather than forcing Visual Studio 2022.
 - Heartbeat default changed from 5 seconds to 10 seconds.
 - Added `npm run dev:all`.
 - Added station readiness aggregation.
@@ -331,6 +369,38 @@ node -e "require('pcsclite'); console.log('dev pcsclite loaded for ' + process.v
 
 Both were verified on Node `v26.4.0` / ABI `147`; one check was in the transfer reader bundle and one was in `thai-id-intake`.
 
+Additional deployment verification completed:
+
+- PowerShell syntax parsing passed for the full/lite launcher scripts and the
+  lite installer.
+- The full reader's bundled Node reported `v26.4.0`, ABI `147`, and loaded its
+  bundled `pcsclite` addon.
+- The lite reader was checked to contain its app, bootstrap package/lockfile,
+  local card-reader/shared-types inputs, and installer while excluding
+  `runtime/`, `node_modules/`, and `pcsclite` before first run.
+- `npm ci --dry-run --ignore-scripts --omit=dev` passed for the lite bootstrap.
+- A manual Windows lite bootstrap test was reported successful after correcting
+  Visual Studio version detection. It downloaded Node, installed 71 production
+  packages, compiled `pcsclite`, and opened the existing reader GUI.
+
+## Heartbeat And Retention
+
+`READER_HEARTBEAT_MS=10000` sends one reader-status heartbeat every 10 seconds:
+6 per minute, 8,640 per day, or 120,960 in 14 days per continuously running
+reader. A representative idle heartbeat JSON payload is about 361 bytes, so
+two weeks produces about 43.7 MB (41.6 MiB) of payload before Kafka record and
+index overhead.
+
+The bundled Kafka broker uses `log.retention.hours=168` (7 days), checks
+retention every five minutes, and has 1 GiB segments. One reader therefore
+normally retains roughly one week's heartbeat payload, about 21-25 MiB plus
+Kafka overhead; deletion is segment-based, so there can be a temporary peak
+closer to two weeks. Multiply this estimate by the number of always-on readers.
+
+The Windows `reader-agent.log` records the console heartbeat line too, at about
+6-8 MB over 14 days of uninterrupted operation. The reader launcher clears
+that local log whenever the reader-agent starts.
+
 ## Known Caveats
 
 - State is currently in memory. Restarting backend clears active queues/results.
@@ -342,7 +412,9 @@ Both were verified on Node `v26.4.0` / ABI `147`; one check was in the transfer 
 - On real servers with many projects, check port ownership before starting: `sudo ss -ltnp | grep -E ':3000|:3001|:3002|:9092'`.
 - PM2/UFW deployment may need sudo. If infra owns firewall policy, confirm before allowing/removing ports.
 - `node-gyp`/`pcsclite` Windows setup can be fragile. See `PCSC_NATIVE_ADDON_TROUBLESHOOTING.md`. If Node changes, rebuild `pcsclite` for the new ABI before running dev reader-agent or packaging the transfer bundle.
-- Node 26 generated MSVC project flags for `pcsclite` that did not link cleanly with the local VS toolchain. The successful rebuild path was: configure with `node-gyp`, remove generated `-flto=thin` and `/opt:lldltojobs=2` from `pcsclite.vcxproj`, then run `node-gyp build`.
+- Node 26 can generate MSVC project flags for `pcsclite` that do not link
+  cleanly. The lite installer removes `-flto=thin` and `/opt:lldltojobs=2`
+  from the generated `pcsclite.vcxproj` before it runs `node-gyp build`.
 - The reader library package main path has quirks, so reader-agent imports `thai-id-card-reader/build/index.js`.
 - Real hardware behavior for card inserted/removed depends on what PC/SC/library events expose.
 
