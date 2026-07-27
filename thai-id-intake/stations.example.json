@@ -1,0 +1,12 @@
+{
+  "stations": [
+    {
+      "stationId": "A01",
+      "label": "Station A01"
+    },
+    {
+      "stationId": "A02",
+      "label": "Station A02"
+    }
+  ]
+}

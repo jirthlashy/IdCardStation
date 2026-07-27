@@ -21,7 +21,19 @@ export function resolveBackendUrl(configuredUrl: string | undefined, browserLoca
   return `${browserLocation.protocol}//${browserLocation.hostname}:3001`;
 }
 
+const SAFE_STATION_ID_PATTERN = /^[A-Za-z0-9._-]{1,80}$/;
+
+export function resolveStationId(configuredStationId: string | undefined, browserLocation: Pick<Location, "search">) {
+  const search = browserLocation.search ?? "";
+  const requestedStationId = new URLSearchParams(search).get("stationId")?.trim();
+  const stationId = requestedStationId || configuredStationId?.trim() || "A01";
+  if (!SAFE_STATION_ID_PATTERN.test(stationId)) {
+    throw new Error("Invalid stationId");
+  }
+  return stationId;
+}
+
 export const appConfig = {
   backendUrl: resolveBackendUrl(import.meta.env.VITE_BACKEND_URL, window.location),
-  stationId: import.meta.env.VITE_STATION_ID ?? "A01"
+  stationId: resolveStationId(import.meta.env.VITE_STATION_ID, window.location)
 };

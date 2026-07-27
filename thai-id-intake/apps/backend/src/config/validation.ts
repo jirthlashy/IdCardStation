@@ -20,6 +20,7 @@ export const backendEnvSchema = z.object({
   READER_HEARTBEAT_MS: z.coerce.number().int().positive().default(10000),
   RESULT_AUTO_CLEAR_SECONDS: z.coerce.number().int().positive().default(120),
   STATION_ID: safeTopicSuffix.default("A01"),
+  STATIONS_CONFIG_PATH: z.string().trim().min(1).optional(),
   ALLOWED_STATION_IDS: z
     .string()
     .trim()
@@ -38,6 +39,24 @@ export const backendEnvSchema = z.object({
 });
 
 export type BackendEnv = z.infer<typeof backendEnvSchema>;
+
+export const stationConfigSchema = z
+  .object({
+    stationId: safeTopicSuffix,
+    label: z.string().trim().min(1).optional()
+  })
+  .strict();
+
+export const stationRegistrySchema = z
+  .object({
+    stations: z
+      .array(stationConfigSchema)
+      .min(1)
+      .refine((stations) => new Set(stations.map((station) => station.stationId)).size === stations.length, "station IDs must be unique")
+  })
+  .strict();
+
+export type StationConfig = z.infer<typeof stationConfigSchema>;
 
 export const createScanRequestInputSchema = z.object({
   nurseId: requiredString,
@@ -127,6 +146,14 @@ export function parseBackendEnv(env: NodeJS.ProcessEnv = process.env): BackendEn
     throw new Error(`Invalid backend environment: ${z.prettifyError(result.error)}`);
   }
   return result.data;
+}
+
+export function parseStationRegistry(value: unknown): StationConfig[] {
+  const result = stationRegistrySchema.safeParse(value);
+  if (!result.success) {
+    throw new Error(`Invalid station registry: ${z.prettifyError(result.error)}`);
+  }
+  return result.data.stations.map((station) => ({ ...station, label: station.label ?? station.stationId }));
 }
 
 export function parseKafkaJson<T>(schema: z.ZodType<T>, value: Buffer): T | undefined {

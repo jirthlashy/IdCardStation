@@ -15,18 +15,26 @@ export async function publishJson(topic: string, value: unknown, key?: string) {
   });
 }
 
+type TopicConfig = { topic: string; numPartitions: number; replicationFactor: number };
+
+export function requiredTopicConfigs(stationIds: string[] = backendConfig.allowedStationIds): TopicConfig[] {
+  return [
+    { topic: KAFKA_TOPICS.scanRequests, numPartitions: 1, replicationFactor: 1 },
+    { topic: KAFKA_TOPICS.readerCardRead, numPartitions: 1, replicationFactor: 1 },
+    { topic: KAFKA_TOPICS.scanRejections, numPartitions: 1, replicationFactor: 1 },
+    { topic: KAFKA_TOPICS.auditScanEvents, numPartitions: 1, replicationFactor: 1 },
+    ...stationIds.flatMap((stationId) => [
+      { topic: KAFKA_TOPICS.stationStatus(stationId), numPartitions: 1, replicationFactor: 1 },
+      { topic: KAFKA_TOPICS.readerStatus(stationId), numPartitions: 1, replicationFactor: 1 }
+    ])
+  ];
+}
+
 export async function ensureTopics() {
   await admin.connect();
   try {
     const existingTopics = new Set(await admin.listTopics());
-    const topics = [
-      { topic: KAFKA_TOPICS.scanRequests, numPartitions: 1, replicationFactor: 1 },
-      { topic: KAFKA_TOPICS.readerCardRead, numPartitions: 1, replicationFactor: 1 },
-      { topic: KAFKA_TOPICS.scanRejections, numPartitions: 1, replicationFactor: 1 },
-      { topic: KAFKA_TOPICS.stationStatus(backendConfig.defaultStationId), numPartitions: 1, replicationFactor: 1 },
-      { topic: KAFKA_TOPICS.readerStatus(backendConfig.defaultStationId), numPartitions: 1, replicationFactor: 1 },
-      { topic: KAFKA_TOPICS.auditScanEvents, numPartitions: 1, replicationFactor: 1 }
-    ].filter(({ topic }) => !existingTopics.has(topic));
+    const topics = requiredTopicConfigs().filter(({ topic }) => !existingTopics.has(topic));
 
     if (topics.length === 0) return;
 

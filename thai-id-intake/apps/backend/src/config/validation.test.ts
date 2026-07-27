@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createScanRequestInputSchema, parseBackendEnv, readerCardReadEventSchema, readerStatusEventSchema, scanRejectedEventSchema, rejectionReasonSchema } from "./validation.js";
+import { createScanRequestInputSchema, parseBackendEnv, parseStationRegistry, readerCardReadEventSchema, readerStatusEventSchema, scanRejectedEventSchema, rejectionReasonSchema } from "./validation.js";
 
 const envelope = {
   eventId: "evt-1",
@@ -39,6 +39,16 @@ describe("backend validation", () => {
 
     expect(() => parseBackendEnv({ BACKEND_PORT: "-1" })).toThrow("Invalid backend environment");
     expect(() => parseBackendEnv({ ALLOWED_STATION_IDS: "A01,bad/topic" })).toThrow("Invalid backend environment");
+  });
+
+  it("validates station registry files", () => {
+    expect(parseStationRegistry({ stations: [{ stationId: "F1A01", label: "Floor 1 Station" }, { stationId: "F4A01" }] })).toEqual([
+      { stationId: "F1A01", label: "Floor 1 Station" },
+      { stationId: "F4A01", label: "F4A01" }
+    ]);
+
+    expect(() => parseStationRegistry({ stations: [{ stationId: "A01" }, { stationId: "A01" }] })).toThrow("Invalid station registry");
+    expect(() => parseStationRegistry({ stations: [{ stationId: "bad/topic" }] })).toThrow("Invalid station registry");
   });
 
   it("validates reader card-read Kafka events", () => {

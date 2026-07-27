@@ -1,5 +1,5 @@
 import { KAFKA_TOPICS, ReaderStatusEvent, ScanRejectedEvent } from "@thai-id-intake/shared-types";
-import { backendConfig } from "../config/config.js";
+import { backendConfig, isAllowedStationId } from "../config/config.js";
 import { parseKafkaJson, readerCardReadEventSchema, readerStatusEventSchema, scanRejectedEventSchema } from "../config/validation.js";
 import { audit } from "../audit/audit.js";
 import { nowIso } from "../events/events.js";
@@ -15,7 +15,10 @@ export async function startKafka() {
   await consumer.connect();
   await consumer.subscribe({ topic: KAFKA_TOPICS.readerCardRead, fromBeginning: false });
   await consumer.subscribe({ topic: KAFKA_TOPICS.scanRejections, fromBeginning: false });
-  await consumer.subscribe({ topic: KAFKA_TOPICS.readerStatus(backendConfig.defaultStationId), fromBeginning: false });
+  const readerStatusTopics = new Set(backendConfig.allowedStationIds.map((stationId) => KAFKA_TOPICS.readerStatus(stationId)));
+  for (const topic of readerStatusTopics) {
+    await consumer.subscribe({ topic, fromBeginning: false });
+  }
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       if (!message.value) return;
@@ -35,9 +38,10 @@ export async function startKafka() {
           occurredAt: nowIso()
         });
       }
-      if (topic === KAFKA_TOPICS.readerStatus(backendConfig.defaultStationId)) {
+      if (readerStatusTopics.has(topic)) {
         const readerStatus = parseKafkaJson(readerStatusEventSchema, message.value) as ReaderStatusEvent | undefined;
         if (!readerStatus) return;
+        if (!isAllowedStationId(readerStatus.payload.stationId)) return;
         lastReaderStatusByStation.set(readerStatus.payload.stationId, readerStatus.payload);
         emitStationEvent(readerStatus.payload.stationId, { kind: "reader", payload: readerStatus.payload });
         emitStationEvent(readerStatus.payload.stationId, { kind: "readiness", payload: getStationReadiness(readerStatus.payload.stationId) });

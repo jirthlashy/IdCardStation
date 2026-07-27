@@ -25,13 +25,15 @@ registerRoutes(app);
 
 setInterval(expireOldRequests, 1_000);
 setInterval(() => {
-  for (const stationId of stations.keys()) {
+  for (const stationId of new Set([...backendConfig.allowedStationIds, ...stations.keys()])) {
     emitStationEvent(stationId, { kind: "readiness", payload: getStationReadiness(stationId) });
   }
 }, backendConfig.readerHeartbeatMs);
 
 await startKafka();
-await publishStationStatus(backendConfig.defaultStationId, "neutral", "Ready for next scan request");
+for (const stationId of backendConfig.allowedStationIds) {
+  await publishStationStatus(stationId, "neutral", "Ready for next scan request");
+}
 app.listen(backendConfig.port, backendConfig.host, () => {
   console.log(`backend listening on http://${backendConfig.host}:${backendConfig.port}`);
 });

@@ -12,6 +12,10 @@ export function registerRoutes(app: Express) {
     res.json({ ok: true, kafkaBrokers: backendConfig.brokers });
   });
 
+  app.get("/api/stations", (_req, res) => {
+    res.json({ stations: backendConfig.stations });
+  });
+
   app.get("/api/stations/:stationId/readiness", (req, res) => {
     if (!isAllowedStationId(req.params.stationId)) {
       res.status(404).json({ error: "station not found" });
