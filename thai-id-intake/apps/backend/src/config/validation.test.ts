@@ -37,6 +37,7 @@ describe("backend validation", () => {
       ALLOWED_STATION_IDS: ["A01", "A02"]
     });
 
+    expect(parseBackendEnv({ STATIONS_CONFIG_PATH: "" }).STATIONS_CONFIG_PATH).toBeUndefined();
     expect(() => parseBackendEnv({ BACKEND_PORT: "-1" })).toThrow("Invalid backend environment");
     expect(() => parseBackendEnv({ ALLOWED_STATION_IDS: "A01,bad/topic" })).toThrow("Invalid backend environment");
   });

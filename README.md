@@ -173,11 +173,24 @@ Kafka UI:       http://localhost:8080
 
 ## Deployment Bundle
 
-`deploy-transfer/` is the current manual transfer bundle. It is ignored by git, so treat it as generated/operator-facing output rather than source of truth.
+`deploy-transfer/` is the current full manual transfer bundle. It is ignored by git, so treat it as generated/operator-facing output rather than source of truth.
 
 - `deploy-transfer/server/` goes to the Ubuntu/server PC.
 - `deploy-transfer/reader-agent/` goes to the Windows PC connected to the smart card reader.
 - The reader PC operator should only need to double-click `Thai ID Reader.bat`.
+
+`deploy-transfer/` is the complete offline transfer: its Windows reader carries
+Node `v26.4.0` and the matching prebuilt `pcsclite` addon, so it works after
+extraction without internet, npm, or build tools.
+
+`deploy-transfer-lite/` is the smaller online-install alternative. Its server
+folder carries workspace source and builds on the Ubuntu target using
+`INSTALL_SERVER_DEPS.sh`. Its Windows reader downloads Node and npm packages,
+installs native build prerequisites with one UAC approval, then compiles
+`pcsclite` during the first double-click of `Thai ID Reader.bat`. The lite
+server needs Java, Node/npm, Python 3, Bash, PM2, `tar`, and `curl` or `wget`;
+the lite reader needs internet access to Node, npm, and Microsoft download
+sources. Both reader bundles still require the physical reader's vendor driver.
 
 The Windows reader GUI launcher source is tracked under:
 

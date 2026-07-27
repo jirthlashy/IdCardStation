@@ -20,7 +20,11 @@ export const backendEnvSchema = z.object({
   READER_HEARTBEAT_MS: z.coerce.number().int().positive().default(10000),
   RESULT_AUTO_CLEAR_SECONDS: z.coerce.number().int().positive().default(120),
   STATION_ID: safeTopicSuffix.default("A01"),
-  STATIONS_CONFIG_PATH: z.string().trim().min(1).optional(),
+  STATIONS_CONFIG_PATH: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
   ALLOWED_STATION_IDS: z
     .string()
     .trim()

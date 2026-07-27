@@ -133,7 +133,21 @@ Do not run `npm run build` unless the project owner explicitly approves.
 
 ## Current Deployment Packaging
 
-`deploy-transfer/` is the current manual transfer bundle. It is ignored by git, so it must be copied/transferred separately or intentionally force-added if the team wants to version it.
+`deploy-transfer/` is the current full manual transfer bundle. It is ignored by git, so it must be copied/transferred separately or intentionally force-added if the team wants to version it.
+
+`deploy-transfer/` is the full offline transfer. Its Windows `reader-agent/`
+includes the pinned Node `v26.4.0` runtime and matching prebuilt `pcsclite`
+addon, so it works after extraction without internet, npm, or build tools.
+
+`deploy-transfer-lite/` is the smaller online-install alternative for Ubuntu
+hosts and reader PCs with outbound access. Its `server/` folder includes source
+instead of Kafka, `node_modules`, and build artifacts. On the target server,
+configure `server.env`, run `bash INSTALL_SERVER_DEPS.sh`, then run
+`bash START_SERVER_PM2.sh`. Its Windows `reader-agent/` contains a one-click
+bootstrap: `Thai ID Reader.bat` requests UAC, downloads verified Node, installs
+native build prerequisites when necessary, runs npm install, compiles
+`pcsclite`, and opens the existing GUI. The lite bootstrap vendors the small
+card-reader build input locally, so it does not depend on GitHub hosting.
 
 ```text
 deploy-transfer/
@@ -151,8 +165,9 @@ deploy-transfer/
   reader-agent/
     app/
     node_modules/
+    runtime/
+      node/
     .reader-support/
-      reader.env
       THAI_ID_READER_LAUNCHER.ps1
       RUN_READER_AGENT_BACKGROUND.ps1
       STOP_READER_AGENT.ps1
@@ -174,7 +189,9 @@ The split is intentional.
 - The hidden support scripts prefer a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then fall back to `reader-agent/node.exe`, then system `node`.
 - The tracked source for the Windows reader launcher lives in `thai-id-intake/apps/reader-agent/deploy/windows/`, including its app-owned sync script. Run `npm run sync:reader-launcher` from `thai-id-intake/` to refresh the deploy-transfer launcher files from that source.
 - `pcsclite` is a native addon. Its compiled `pcsclite.node` must match the Node ABI used to run the reader-agent. The current dev workspace uses Node `v26.4.0`, ABI `147`, win32 x64.
-- The current `deploy-transfer/reader-agent` folder does not include `runtime/node/node.exe`; if the reader PC uses system Node, verify the system Node ABI matches the packaged `pcsclite` build.
+- `deploy-transfer/reader-agent` includes `runtime/node/node.exe` and the
+  matching native addon for offline use. `deploy-transfer-lite/reader-agent`
+  deliberately omits both before its first run and installs them locally.
 - Kafka UI is not included in the transfer bundle.
 
 The current real-server path is PM2:
@@ -276,6 +293,10 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 - Dev workspace currently runs on Node `v26.4.0` / ABI `147`.
 - Added server startup scripts for both Java/no-PM2 and PM2 modes.
 - Added PM2 UFW port management controlled by `MANAGE_UFW_RULES=true`.
+- Split reader delivery into a full offline bundle and a lite online bootstrap.
+  Full carries Node `v26.4.0` / ABI `147` and prebuilt `pcsclite`; lite uses a
+  checksum-verified Node download, UAC-assisted build prerequisites, and
+  `npm ci --omit=dev` on the target reader PC.
 - Heartbeat default changed from 5 seconds to 10 seconds.
 - Added `npm run dev:all`.
 - Added station readiness aggregation.

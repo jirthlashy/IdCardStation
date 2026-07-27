@@ -105,7 +105,7 @@ function Resolve-NodeExe {
   if ($systemNode) {
     return $systemNode.Source
   }
-  throw "Node.js runtime was not found. This deployment should include runtime\node\node.exe."
+  throw "The bundled Node.js runtime is missing. Re-copy the complete reader-agent folder."
 }
 
 function Invoke-NodeCheck {
@@ -130,7 +130,7 @@ function Test-PcscliteNativeAddon {
   try {
     $output = & $NodeExe -e "require('pcsclite'); console.log('pcsclite native module loaded')" 2>&1
     if ($LASTEXITCODE -ne 0) {
-      throw "Windows cannot load the pcsclite native module. Repackage reader-agent with node_modules built for this Node runtime. $($output -join ' ')"
+      throw "Windows cannot load the bundled smart-card module. Re-copy the complete reader-agent folder. If the problem remains, confirm the reader vendor driver is installed and Windows can access the PC/SC smart-card service. $($output -join ' ')"
     }
     return ($output -join "`r`n")
   } finally {

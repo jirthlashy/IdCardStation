@@ -17,7 +17,9 @@ Keep `reader.env.example` as the documented default template only. Do not commit
 
 Runtime behavior:
 
-- `Thai ID Reader.bat` opens a CMD window and GUI.
+- `Thai ID Reader.bat` runs an optional bundle-owned `INSTALL_READER.ps1`
+  before opening the CMD window and GUI. The full offline bundle omits that
+  hook; the lite bundle uses it for first-run runtime installation.
 - The GUI validates config, writes `reader.env`, then closes.
 - The CMD window starts the reader-agent and shows the live terminal output.
 - Closing the CMD window stops the reader-agent.
