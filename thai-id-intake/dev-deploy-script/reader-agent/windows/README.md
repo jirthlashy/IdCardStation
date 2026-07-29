@@ -13,6 +13,17 @@ deploy-transfer/reader-agent/
     STOP_READER_AGENT.ps1
 ```
 
+The lite bundle uses the same common launcher files plus this tracked source:
+
+```text
+lite/
+  INSTALL_READER.ps1
+```
+
+The sync command copies the common launcher to both ignored reader bundles and
+copies `lite/INSTALL_READER.ps1` only to `deploy-transfer-lite/reader-agent/`.
+The full reader intentionally omits that installer so it remains offline.
+
 Keep `reader.env.example` as the documented default template only. Do not commit real reader machine config, logs, PID files, or card-read data.
 
 Runtime behavior:
@@ -24,7 +35,7 @@ Runtime behavior:
 - The CMD window starts the reader-agent and shows the live terminal output.
 - Closing the CMD window stops the reader-agent.
 
-To refresh the deploy-transfer launcher files from this source:
+To refresh both ignored reader bundles from this source:
 
 ```powershell
 npm run sync:reader-launcher

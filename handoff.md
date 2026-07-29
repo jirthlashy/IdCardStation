@@ -210,7 +210,18 @@ The split is intentional.
 - The GUI writes `.reader-support/reader.env`, checks Kafka/Node/pcsclite, then exits. The CMD window starts the reader, shows live output, and owns reader-agent lifetime.
 - Reader-agent lifetime is intentionally tied to the CMD window: closing CMD stops reader-agent.
 - The hidden support scripts prefer a bundled Node runtime at `reader-agent/runtime/node/node.exe` when present, then fall back to `reader-agent/node.exe`, then system `node`.
-- The tracked source for the Windows reader launcher lives in `thai-id-intake/apps/reader-agent/deploy/windows/`, including its app-owned sync script. Run `npm run sync:reader-launcher` from `thai-id-intake/` to refresh the deploy-transfer launcher files from that source.
+- The tracked source for the Windows reader launcher lives in
+  `thai-id-intake/dev-deploy-script/reader-agent/windows/`. Run
+  `npm run sync:reader-launcher` from `thai-id-intake/` to refresh both ignored
+  reader bundles from that source.
+- `thai-id-intake/dev-deploy-script/reader-agent/windows/lite/INSTALL_READER.ps1`
+  is the tracked lite-only reader installer. The sync command refreshes common
+  reader scripts in both ignored bundles, copies that installer only to lite,
+  and removes it from the full offline bundle.
+- `thai-id-intake/dev-deploy-script/server/full/` and
+  `thai-id-intake/dev-deploy-script/server/lite/`
+  are the tracked sources for the server deployment scripts. The copied scripts
+  in the ignored transfer folders are operator-facing output.
 - `pcsclite` is a native addon. Its compiled `pcsclite.node` must match the Node ABI used to run the reader-agent. The current dev workspace uses Node `v26.4.0`, ABI `147`, win32 x64.
 - `deploy-transfer/reader-agent` includes `runtime/node/node.exe` and the
   matching native addon for offline use. `deploy-transfer-lite/reader-agent`
@@ -224,7 +235,9 @@ The split is intentional.
   the tested Windows machine used Visual Studio 2026 with the C++ toolset.
 - The installer applies the known Node 26 MSVC project adjustment before the
   native build. If bootstrap fails, its elevated PowerShell window and parent
-  CMD window now remain open so the operator can capture the actual error.
+  CMD window now remain open so the operator can capture the actual error. It
+  also shows five setup stages and an elapsed-time update every ten seconds
+  while npm or native compilation is still working.
 - Kafka UI is not included in the transfer bundle.
 
 The current real-server path is PM2:
@@ -321,7 +334,10 @@ VITE_RESULT_AUTO_CLEAR_SECONDS=120
 - Current manual transfer bundle is `deploy-transfer/server` and `deploy-transfer/reader-agent`.
 - Added reader GUI launcher and stop script for non-coder reader PC operators.
 - Consolidated reader startup/stop through one visible launcher: `deploy-transfer/reader-agent/Thai ID Reader.bat`. Internal PowerShell scripts and generated config live under hidden `.reader-support/`.
-- Added tracked reader launcher source under `thai-id-intake/apps/reader-agent/deploy/windows/` and an app-owned `sync:launcher` script, exposed as root `sync:reader-launcher`, to copy it into the ignored transfer bundle.
+- Moved tracked reader and server deployment sources to
+  `thai-id-intake/dev-deploy-script/`. The workspace-level
+  `sync:reader-launcher` command copies reader scripts into the ignored
+  transfer bundles.
 - Flattened reader-agent deployment runtime to `reader-agent/app/` and removed the old nested TypeScript workspace `dist/apps/reader-agent/src` deployment path.
 - Flattened backend build/deploy output to `apps/backend/dist/index.js`.
 - Dev workspace currently runs on Node `v26.4.0` / ABI `147`.

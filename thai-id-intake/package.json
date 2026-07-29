@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build --workspaces",
-    "sync:reader-launcher": "npm run sync:launcher -w @thai-id-intake/reader-agent"
+    "sync:reader-launcher": "node dev-deploy-script/reader-agent/windows/sync-reader-windows-launcher.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

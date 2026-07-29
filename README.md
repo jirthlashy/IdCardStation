@@ -195,8 +195,19 @@ sources. Both reader bundles still require the physical reader's vendor driver.
 The Windows reader GUI launcher source is tracked under:
 
 ```text
-thai-id-intake/apps/reader-agent/deploy/windows/
+thai-id-intake/dev-deploy-script/reader-agent/windows/
 ```
+
+The tracked source for the server deployment scripts is:
+
+```text
+thai-id-intake/dev-deploy-script/server/
+```
+
+`thai-id-intake/dev-deploy-script/` is the tracked development source for
+deployment scripts. It is not sent to a target machine directly; its contents
+are copied into the ignored `deploy-transfer/` and `deploy-transfer-lite/`
+operator bundles when preparing a release.
 
 It packages into this operator-facing shape:
 
@@ -206,7 +217,7 @@ deploy-transfer/reader-agent/
   .reader-support/
 ```
 
-Refresh the deploy copy from the tracked source with:
+Refresh both reader deploy copies from the tracked source with:
 
 ```powershell
 cd thai-id-intake
