@@ -434,6 +434,69 @@ that local log whenever the reader-agent starts.
 - The reader library package main path has quirks, so reader-agent imports `thai-id-card-reader/build/index.js`.
 - Real hardware behavior for card inserted/removed depends on what PC/SC/library events expose.
 
+## Next Planned Work: Tracked Package Generator
+
+The immediate next task is to make `deploy-transfer/` and
+`deploy-transfer-lite/` reproducible generated outputs instead of the only
+copies of deployment behavior. Keep both output folders ignored by Git.
+
+### Goal
+
+Create tracked packaging and verification scripts under:
+
+```text
+thai-id-intake/dev-deploy-script/package/
+  PACKAGE_DEPLOY.ps1
+  VERIFY_DEPLOY_BUNDLE.ps1
+```
+
+Expose workspace commands such as:
+
+```powershell
+npm run package:full
+npm run package:lite
+npm run verify:deploy
+```
+
+Do not run an application build as part of this work unless the project owner
+explicitly approves it. The packager may consume existing approved build output
+or fail clearly when required build artifacts are absent.
+
+### Required Behavior
+
+1. Build each bundle in a temporary staging directory, verify it, then replace
+   the matching ignored output folder only after verification passes.
+2. Copy deployment script sources from `dev-deploy-script/`, not from an old
+   ignored bundle. `npm run sync:reader-launcher` remains the source-to-reader
+   refresh command.
+3. Full output must include its offline server/runtime files plus the Windows
+   reader app, production dependencies, pinned Node `v26.4.0` runtime, runtime
+   manifest, and a `pcsclite` load check using that bundled Node.
+4. Lite output must include server source/config plus the reader app, bootstrap
+   `package.json`/lockfile, local card-reader/shared-types inputs, and the
+   tracked lite installer. It must exclude reader `runtime/`, `node_modules/`,
+   `pcsclite`, `reader.env`, logs, PID files, and card data before first use.
+5. Remove machine-local files from staging without touching the developer's
+   source workspace or an existing deployed reader configuration.
+6. Write a bundle manifest with Git commit, creation timestamp, bundle mode,
+   pinned Node version/checksum where applicable, lockfile hash, and file
+   checksums.
+7. Support creating release ZIP files after the staging verification. The exact
+   default output policy (folder plus ZIP versus ZIP-only) is still a product
+   decision; staging is required either way.
+
+### Verification
+
+- Parse PowerShell and shell scripts without executing deployment.
+- Check full and lite folder allowlists/denylists.
+- Verify full bundled Node reports `v26.4.0`, ABI `147`, and loads `pcsclite`.
+- Verify lite has no Node runtime, installed dependencies, native addon, or
+  machine config before first run.
+- Verify manifests and copied script hashes.
+- Preserve the existing successful manual Windows lite bootstrap test as the
+  acceptance baseline; do not claim Ubuntu server acceptance until that test is
+  run on a clean server.
+
 ## Best Next Steps
 
 1. Manual two-nurse queue test:
