@@ -24,9 +24,14 @@ function Invoke-RequiredProcess {
   )
 
   Write-Host $Description
-  & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw "$Description failed with exit code $LASTEXITCODE."
+  Push-Location $WorkingDirectory
+  try {
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw "$Description failed with exit code $LASTEXITCODE."
+    }
+  } finally {
+    Pop-Location
   }
 }
 
@@ -69,9 +74,23 @@ function Save-VerifiedKafkaArchive {
   Save-VerifiedDownload -Uri $script:KafkaSha512Url -Destination $ChecksumPath
 
   $checksumText = Get-Content -Raw -LiteralPath $ChecksumPath
-  $expected = ([regex]::Match($checksumText, "[A-Fa-f0-9]{128}")).Value.ToLowerInvariant()
+  $checksumPayload = $checksumText
+  $colonIndex = $checksumPayload.IndexOf(":")
+  if ($colonIndex -ge 0) {
+    $checksumPayload = $checksumPayload.Substring($colonIndex + 1)
+  }
+
+  $expected = ([regex]::Match($checksumPayload, "[A-Fa-f0-9]{128}")).Value.ToLowerInvariant()
+  if (-not $expected) {
+    $expected = ([regex]::Matches($checksumPayload, "[A-Fa-f0-9]{8}") | ForEach-Object { $_.Value }) -join ""
+    $expected = $expected.ToLowerInvariant()
+  }
+
   if (-not $expected) {
     throw "Could not parse Kafka SHA-512 checksum from $ChecksumPath."
+  }
+  if ($expected.Length -ne 128) {
+    throw "Parsed Kafka SHA-512 checksum from $ChecksumPath had length $($expected.Length); expected 128 hex characters."
   }
 
   $actual = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA512).Hash.ToLowerInvariant()
