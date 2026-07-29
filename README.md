@@ -173,7 +173,9 @@ Kafka UI:       http://localhost:8080
 
 ## Deployment Bundle
 
-`deploy-transfer/` is the current full manual transfer bundle. It is ignored by git, so treat it as generated/operator-facing output rather than source of truth.
+`deploy-transfer/` is the full offline transfer bundle. `deploy-transfer-lite/`
+is the smaller online-install alternative. Both are ignored by git, so treat
+them as generated/operator-facing output rather than source of truth.
 
 - `deploy-transfer/server/` goes to the Ubuntu/server PC.
 - `deploy-transfer/reader-agent/` goes to the Windows PC connected to the smart card reader.
@@ -192,6 +194,73 @@ server needs Java, Node/npm, Python 3, Bash, PM2, `tar`, and `curl` or `wget`;
 the lite reader needs internet access to Node, npm, and Microsoft download
 sources. Both reader bundles still require the physical reader's vendor driver.
 
+### Release Creator
+
+The tracked release creator lives under:
+
+```text
+thai-id-intake/dev-deploy-script/package/
+```
+
+It stages a bundle, verifies it, writes `BUNDLE_MANIFEST.json`, then emits
+exactly one artifact: either a folder or a ZIP. Test the generated bundle, not
+the tracked script source directory, on the target OS.
+
+```powershell
+cd thai-id-intake
+npm run package:full:folder
+npm run package:full:zip
+npm run package:lite:folder
+npm run package:lite:zip
+npm run release-input:full
+npm run release-input:lite
+npm run release-input:all
+npm run verify:deploy
+```
+
+Folder commands create `deploy-transfer/` or `deploy-transfer-lite/` and refuse
+to overwrite an existing folder by default. ZIP commands write only to the
+root-level ignored `release/` folder and do not replace `deploy-transfer*`.
+
+Packaging does not run an application build, install dependencies, or download
+runtime files. It consumes existing app build output and fails clearly when a
+required input is missing.
+
+Fresh clones can prepare the ignored release inputs through the same release
+creator:
+
+```powershell
+cd thai-id-intake
+npm install
+npm run build
+npm run release-input:all
+```
+
+`release-input:*` is the expensive step. It may download Kafka and pinned Node,
+install npm dependencies, and build the Windows `pcsclite` native addon. Run it
+on a machine with the required network access and native build prerequisites.
+It refuses to replace existing `release-input/full/` or `release-input/lite/`
+unless `PACKAGE_DEPLOY.ps1` is run manually with `-ForceReplaceInput`.
+
+Full offline packaging also requires the ignored root-level artifact input:
+
+```text
+release-input/full/
+```
+
+Seed it from a known-good full bundle with Kafka, production `node_modules`,
+bundled Node `v26.4.0`, and the matching prebuilt `pcsclite` addon.
+
+Lite reader packaging requires:
+
+```text
+release-input/lite/
+```
+
+That input carries the reader bootstrap lockfile and vendored
+`thai-id-card-reader` package. Shared-types vendor output is copied from the
+workspace build output.
+
 The Windows reader GUI launcher source is tracked under:
 
 ```text
@@ -209,6 +278,17 @@ deployment scripts. It is not sent to a target machine directly; its contents
 are copied into the ignored `deploy-transfer/` and `deploy-transfer-lite/`
 operator bundles when preparing a release.
 
+Deployment script ownership:
+
+- `reader-agent/windows/` contains shared Windows reader launcher scripts and
+  the lite-only first-run installer.
+- `server/full/` contains PM2 lifecycle scripts for the full Ubuntu server
+  bundle.
+- `server/lite/` contains the server dependency installer and PM2 lifecycle
+  scripts for the lite Ubuntu server bundle.
+- Keep Kafka, built app output, `node_modules`, portable Node runtime files,
+  logs, PID files, `reader.env`, and card data out of `dev-deploy-script/`.
+
 It packages into this operator-facing shape:
 
 ```text
@@ -225,6 +305,10 @@ npm run sync:reader-launcher
 ```
 
 The GUI writes generated reader config to `.reader-support/reader.env`, checks Kafka reachability, checks Node/`pcsclite`, then closes. The CMD window starts the reader-agent, shows live terminal output, and owns the reader lifetime.
+`Thai ID Reader.bat` runs the optional bundle-owned `INSTALL_READER.ps1` hook
+before opening the GUI; the full offline bundle omits that hook, while the lite
+bundle uses it for first-run runtime installation. Closing the CMD window stops
+the reader-agent.
 
 ## App Responsibilities
 

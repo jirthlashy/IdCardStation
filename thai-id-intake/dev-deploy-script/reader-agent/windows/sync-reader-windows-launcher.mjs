@@ -4,6 +4,17 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
+const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) {
+  console.log("Usage: node dev-deploy-script/reader-agent/windows/sync-reader-windows-launcher.mjs");
+  console.log("Copies tracked Windows reader launcher scripts into the ignored full and lite deploy bundles.");
+  process.exit(0);
+}
+
+if (args.length > 0) {
+  throw new Error(`Unknown argument(s): ${args.join(" ")}`);
+}
+
 const execFileAsync = promisify(execFile);
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDir, "../../..");

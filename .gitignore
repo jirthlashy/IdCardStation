@@ -3,4 +3,6 @@ server-container/.env.server
 server-container/
 deploy-transfer/ 
 deploy-transfer-lite/
+release/
+release-input/
 *.zip

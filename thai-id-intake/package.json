@@ -17,7 +17,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build --workspaces",
-    "sync:reader-launcher": "node dev-deploy-script/reader-agent/windows/sync-reader-windows-launcher.mjs"
+    "sync:reader-launcher": "node dev-deploy-script/reader-agent/windows/sync-reader-windows-launcher.mjs",
+    "package:full:folder": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Mode full -Output folder",
+    "package:full:zip": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Mode full -Output zip",
+    "package:lite:folder": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Mode lite -Output folder",
+    "package:lite:zip": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Mode lite -Output zip",
+    "release-input:full": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Action prepare-input -Mode full",
+    "release-input:lite": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Action prepare-input -Mode lite",
+    "release-input:all": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/PACKAGE_DEPLOY.ps1 -Action prepare-input -Mode all",
+    "verify:deploy": "powershell -ExecutionPolicy Bypass -File dev-deploy-script/package/VERIFY_DEPLOY_BUNDLE.ps1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
