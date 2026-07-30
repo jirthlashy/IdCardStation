@@ -111,7 +111,8 @@ function Write-GeneratedText {
   )
 
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
-  $Text.TrimStart() | Set-Content -LiteralPath $Path -Encoding utf8
+  $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+  [System.IO.File]::WriteAllText($Path, $Text.TrimStart(), $utf8NoBom)
 }
 
 function Get-ServerEnvTemplate {

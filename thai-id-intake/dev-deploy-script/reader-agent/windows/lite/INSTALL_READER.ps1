@@ -45,28 +45,20 @@ function Invoke-VisibleProcess {
     [string] $Activity
   )
 
-  $argumentLine = ($Arguments | ForEach-Object { ConvertTo-CommandLineArgument $_ }) -join " "
-  $process = Start-Process `
-    -FilePath $FilePath `
-    -ArgumentList $argumentLine `
-    -WorkingDirectory $WorkingDirectory `
-    -NoNewWindow `
-    -PassThru
   $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-  $nextUpdateSeconds = 10
+  $exitCode = $null
 
-  while (-not $process.HasExited) {
-    Start-Sleep -Seconds 1
-    $process.Refresh()
-    if ($stopwatch.Elapsed.TotalSeconds -ge $nextUpdateSeconds) {
-      Write-Host "$Activity is still running ($([math]::Floor($stopwatch.Elapsed.TotalSeconds)) seconds elapsed). Please keep this window open."
-      $nextUpdateSeconds += 10
-    }
+  Push-Location $WorkingDirectory
+  try {
+    & $FilePath @Arguments
+    $exitCode = $LASTEXITCODE
+  } finally {
+    Pop-Location
+    $stopwatch.Stop()
   }
 
-  $stopwatch.Stop()
-  if ($process.ExitCode -ne 0) {
-    throw "$Activity failed (exit code $($process.ExitCode))."
+  if ($exitCode -ne 0) {
+    throw "$Activity failed (exit code $exitCode)."
   }
   Write-Host "$Activity completed in $([math]::Ceiling($stopwatch.Elapsed.TotalSeconds)) seconds."
 }
