@@ -288,13 +288,31 @@ New-Item -ItemType Directory -Force -Path deploy-transfer\server\backend\apps\ba
 Copy-Item thai-id-intake\apps\backend\dist deploy-transfer\server\backend\apps\backend\dist -Recurse -Force
 Copy-Item thai-id-intake\apps\backend\package.json deploy-transfer\server\backend\apps\backend\package.json -Force
 
-New-Item -ItemType Directory -Force -Path deploy-transfer\server\nurse-webapp, deploy-transfer\server\station-display | Out-Null
-Copy-Item thai-id-intake\apps\nurse-webapp\dist\* deploy-transfer\server\nurse-webapp -Recurse -Force
-Copy-Item thai-id-intake\apps\station-display\dist\* deploy-transfer\server\station-display -Recurse -Force
+Remove-Item -Recurse -Force deploy-transfer\server\nurse-webapp, deploy-transfer\server\station-display -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path deploy-transfer\server\nurse-webapp\assets, deploy-transfer\server\station-display\assets | Out-Null
+Copy-Item thai-id-intake\apps\nurse-webapp\dist\index.html deploy-transfer\server\nurse-webapp\index.html -Force
+Copy-Item thai-id-intake\apps\nurse-webapp\dist\assets\* deploy-transfer\server\nurse-webapp\assets -Recurse -Force
+Copy-Item thai-id-intake\apps\station-display\dist\index.html deploy-transfer\server\station-display\index.html -Force
+Copy-Item thai-id-intake\apps\station-display\dist\assets\* deploy-transfer\server\station-display\assets -Recurse -Force
+
+foreach ($requiredWebPath in @(
+  "deploy-transfer\server\nurse-webapp\index.html",
+  "deploy-transfer\server\nurse-webapp\assets",
+  "deploy-transfer\server\station-display\index.html",
+  "deploy-transfer\server\station-display\assets"
+)) {
+  if (-not (Test-Path -LiteralPath $requiredWebPath)) {
+    throw "Manual full bundle is missing required web output: $requiredWebPath"
+  }
+}
 
 Copy-Item thai-id-intake\dev-deploy-script\server\full\* deploy-transfer\server -Recurse -Force
 Copy-Item thai-id-intake\stations.example.json deploy-transfer\server\stations.example.json -Force
 ```
+
+The nurse and station folders must contain `index.html` and `assets/` side by
+side. If `assets/` is missing, browsers will load the page shell but fail with
+404s for `/assets/index-*.js` or `/assets/index-*.css`.
 
 Create `deploy-transfer\server\server.env` with at least:
 
