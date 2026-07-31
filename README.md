@@ -4,6 +4,10 @@ Secure Thai ID SmartCard intake for a nurse iPad, A01 station display, Windows r
 
 Kafka carries the event flow. The backend owns scan authorization, station queue state, cooldown, and private result routing. The 5-character code is for human confirmation only; private browser actions are bound to `requestId + requestAccessToken`.
 
+## How It Works
+
+![Thai ID Intake runtime flow](1.png)
+
 ## Project Structure
 
 ```text
