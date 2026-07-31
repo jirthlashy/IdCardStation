@@ -261,6 +261,83 @@ That input carries the reader bootstrap lockfile and vendored
 `thai-id-card-reader` package. Shared-types vendor output is copied from the
 workspace build output.
 
+### Manual Full Bundle Fallback
+
+Prefer `npm run package:full:folder` or `npm run package:full:zip`. Use this
+manual path only when Windows file locking, antivirus, or a restricted transfer
+machine prevents the package creator from moving/zipping the staged full bundle.
+
+Prerequisites:
+
+```text
+thai-id-intake/apps/backend/dist/
+thai-id-intake/apps/nurse-webapp/dist/
+thai-id-intake/apps/station-display/dist/
+thai-id-intake/apps/reader-agent/dist/
+release-input/full/
+```
+
+From the repo root, create the full folder bundle:
+
+```powershell
+New-Item -ItemType Directory -Force -Path deploy-transfer\server, deploy-transfer\reader-agent | Out-Null
+
+Copy-Item release-input\full\server\kafka_2.13-4.3.1 deploy-transfer\server\kafka_2.13-4.3.1 -Recurse -Force
+Copy-Item release-input\full\server\backend\node_modules deploy-transfer\server\backend\node_modules -Recurse -Force
+New-Item -ItemType Directory -Force -Path deploy-transfer\server\backend\apps\backend | Out-Null
+Copy-Item thai-id-intake\apps\backend\dist deploy-transfer\server\backend\apps\backend\dist -Recurse -Force
+Copy-Item thai-id-intake\apps\backend\package.json deploy-transfer\server\backend\apps\backend\package.json -Force
+
+New-Item -ItemType Directory -Force -Path deploy-transfer\server\nurse-webapp, deploy-transfer\server\station-display | Out-Null
+Copy-Item thai-id-intake\apps\nurse-webapp\dist\* deploy-transfer\server\nurse-webapp -Recurse -Force
+Copy-Item thai-id-intake\apps\station-display\dist\* deploy-transfer\server\station-display -Recurse -Force
+
+Copy-Item thai-id-intake\dev-deploy-script\server\full\* deploy-transfer\server -Recurse -Force
+Copy-Item thai-id-intake\stations.example.json deploy-transfer\server\stations.example.json -Force
+```
+
+Create `deploy-transfer\server\server.env` with at least:
+
+```env
+SERVER_IP=auto
+KAFKA_PORT=9092
+BACKEND_PORT=3001
+NURSE_WEB_PORT=3000
+STATION_DISPLAY_PORT=3002
+STATION_ID=A01
+ALLOWED_STATION_IDS=A01
+MANAGE_UFW_RULES=true
+SCAN_REQUEST_TTL_SECONDS=90
+STATION_COOLDOWN_MS=3000
+QUEUED_REQUEST_MAX_AGE_SECONDS=300
+RESULT_AUTO_CLEAR_SECONDS=120
+MAX_QUEUE_DEPTH_PER_STATION=10
+SCAN_REQUEST_RATE_LIMIT_WINDOW_MS=60000
+SCAN_REQUEST_RATE_LIMIT_MAX=20
+READER_HEARTBEAT_MS=10000
+```
+
+Then copy the reader side:
+
+```powershell
+Copy-Item thai-id-intake\apps\reader-agent\dist deploy-transfer\reader-agent\app -Recurse -Force
+Set-Content deploy-transfer\reader-agent\app\package.json '{ "type": "module" }'
+Copy-Item release-input\full\reader-agent\node_modules deploy-transfer\reader-agent\node_modules -Recurse -Force
+Copy-Item release-input\full\reader-agent\runtime deploy-transfer\reader-agent\runtime -Recurse -Force
+
+Copy-Item "thai-id-intake\dev-deploy-script\reader-agent\windows\Thai ID Reader.bat" "deploy-transfer\reader-agent\Thai ID Reader.bat" -Force
+New-Item -ItemType Directory -Force -Path deploy-transfer\reader-agent\.reader-support | Out-Null
+Copy-Item thai-id-intake\dev-deploy-script\reader-agent\windows\support\THAI_ID_READER_LAUNCHER.ps1 deploy-transfer\reader-agent\.reader-support\ -Force
+Copy-Item thai-id-intake\dev-deploy-script\reader-agent\windows\support\RUN_READER_AGENT_BACKGROUND.ps1 deploy-transfer\reader-agent\.reader-support\ -Force
+Copy-Item thai-id-intake\dev-deploy-script\reader-agent\windows\support\STOP_READER_AGENT.ps1 deploy-transfer\reader-agent\.reader-support\ -Force
+```
+
+The full reader bundle must not include
+`deploy-transfer\reader-agent\.reader-support\INSTALL_READER.ps1`; that
+installer is lite-only. Manual bundling also skips `BUNDLE_MANIFEST.json` and
+automated verification, so test the resulting `deploy-transfer/server` and
+`deploy-transfer/reader-agent` folders before handing them to operators.
+
 The Windows reader GUI launcher source is tracked under:
 
 ```text
