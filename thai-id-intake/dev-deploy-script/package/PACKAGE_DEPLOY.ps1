@@ -49,6 +49,7 @@ if ($Output -eq "folder" -and (Test-Path -LiteralPath $folderTargetRoot) -and -n
 $stageRoot = Join-Path $paths.StagingRoot "$Mode-$timestamp"
 $stageBundleRoot = Join-Path $stageRoot $bundleFolderName
 
+Write-Host "Preparing $Mode deployment bundle in staging..."
 Assert-PathInside -Parent $paths.WorkspaceRoot -Child $stageRoot
 if (Test-Path -LiteralPath $stageRoot) {
   Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -62,7 +63,9 @@ try {
     Build-LiteDeployBundle -Paths $paths -BundleRoot $stageBundleRoot
   }
 
+  Write-Host "Writing bundle manifest..."
   New-BundleManifest -BundleRoot $stageBundleRoot -Mode $Mode -Paths $paths | Out-Null
+  Write-Host "Verifying staged $Mode bundle..."
   Invoke-BundleVerification -BundleRoot $stageBundleRoot -Mode $Mode -Paths $paths
 
   if ($Output -eq "folder") {
@@ -75,6 +78,7 @@ try {
     Move-Item -LiteralPath $stageBundleRoot -Destination $targetRoot
     Write-Host "Created $Mode folder bundle: $targetRoot"
   } else {
+    Write-Host "Creating $Mode ZIP archive..."
     New-Item -ItemType Directory -Force -Path $paths.ReleaseRoot | Out-Null
     $git = Get-GitMetadata -WorkspaceRoot $paths.WorkspaceRoot
     $zipName = "thai-id-intake-$Mode-$timestamp-$($git.shortCommit).zip"

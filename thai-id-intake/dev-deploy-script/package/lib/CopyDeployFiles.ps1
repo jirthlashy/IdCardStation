@@ -402,27 +402,36 @@ function Build-FullDeployBundle {
     Assert-PathExists -Path (Join-DeployPath -Root $Paths.WorkspaceRoot -RelativePath $required) -Type File
   }
 
+  Write-Host "Writing full bundle operator files..."
   Write-GeneratedText -Path (Join-Path $BundleRoot "README.md") -Text (Get-FullRootReadme)
   Write-GeneratedText -Path (Join-Path $serverRoot "README.md") -Text (Get-FullServerReadme)
   Write-GeneratedText -Path (Join-Path $serverRoot "server.env") -Text (Get-ServerEnvTemplate)
   Copy-Item -LiteralPath (Join-Path $Paths.WorkspaceRoot "stations.example.json") -Destination (Join-Path $serverRoot "stations.example.json") -Force
   Copy-DirectoryContents -Source (Join-Path $Paths.ServerScriptRoot "full") -Destination $serverRoot
 
+  Write-Host "Copying full server Kafka runtime..."
   Copy-DirectoryExact -Source (Join-Path $artifactRoot "server\kafka_2.13-4.3.1") -Destination (Join-Path $serverRoot "kafka_2.13-4.3.1")
+  Write-Host "Copying full server backend production dependencies..."
   Copy-DirectoryExact -Source (Join-Path $artifactRoot "server\backend\node_modules") -Destination (Join-Path $serverRoot "backend\node_modules")
+  Write-Host "Copying full server backend build output..."
   Copy-DirectoryExact -Source (Join-Path $Paths.WorkspaceRoot "apps\backend\dist") -Destination (Join-Path $serverRoot "backend\apps\backend\dist")
   Copy-Item -LiteralPath (Join-Path $Paths.WorkspaceRoot "apps\backend\package.json") -Destination (Join-Path $serverRoot "backend\apps\backend\package.json") -Force
 
+  Write-Host "Copying full server web app build output..."
   Copy-DirectoryContents -Source (Join-Path $Paths.WorkspaceRoot "apps\nurse-webapp\dist") -Destination (Join-Path $serverRoot "nurse-webapp")
   Copy-DirectoryContents -Source (Join-Path $Paths.WorkspaceRoot "apps\station-display\dist") -Destination (Join-Path $serverRoot "station-display")
 
+  Write-Host "Copying full reader app and launcher..."
   Write-GeneratedText -Path (Join-Path $readerRoot "README.md") -Text (Get-FullReaderReadme)
   Copy-DirectoryExact -Source (Join-Path $Paths.WorkspaceRoot "apps\reader-agent\dist") -Destination (Join-Path $readerRoot "app")
   Write-AppModulePackageJson -AppRoot (Join-Path $readerRoot "app")
+  Write-Host "Copying full reader production dependencies..."
   Copy-DirectoryExact -Source (Join-Path $artifactRoot "reader-agent\node_modules") -Destination (Join-Path $readerRoot "node_modules")
+  Write-Host "Copying full reader private Node runtime..."
   Copy-DirectoryExact -Source (Join-Path $artifactRoot "reader-agent\runtime") -Destination (Join-Path $readerRoot "runtime")
   Copy-ReaderLauncher -Paths $Paths -ReaderRoot $readerRoot
 
+  Write-Host "Removing machine-local files from full bundle..."
   Remove-MachineLocalFiles -BundleRoot $BundleRoot
 }
 
@@ -454,12 +463,14 @@ function Build-LiteDeployBundle {
     Assert-PathExists -Path (Join-DeployPath -Root $Paths.WorkspaceRoot -RelativePath $required) -Type File
   }
 
+  Write-Host "Writing lite bundle operator files..."
   Write-GeneratedText -Path (Join-Path $BundleRoot "README.md") -Text (Get-LiteRootReadme)
   Write-GeneratedText -Path (Join-Path $serverRoot "README.md") -Text (Get-LiteServerReadme)
   Write-GeneratedText -Path (Join-Path $serverRoot "server.env") -Text (Get-ServerEnvTemplate)
   Copy-Item -LiteralPath (Join-Path $Paths.WorkspaceRoot "stations.example.json") -Destination (Join-Path $serverRoot "stations.example.json") -Force
   Copy-DirectoryContents -Source (Join-Path $Paths.ServerScriptRoot "lite") -Destination $serverRoot
 
+  Write-Host "Copying lite server source files..."
   $serverWorkspace = Join-Path $serverRoot "thai-id-intake"
   New-Item -ItemType Directory -Force -Path $serverWorkspace | Out-Null
   Copy-GitTrackedWorkspaceFiles -Paths $Paths -Destination $serverWorkspace -Pathspecs @(
@@ -475,6 +486,7 @@ function Build-LiteDeployBundle {
     "packages/shared-types"
   )
 
+  Write-Host "Copying lite reader app, package lock, and vendor files..."
   Write-GeneratedText -Path (Join-Path $readerRoot "README.md") -Text (Get-LiteReaderReadme)
   Copy-DirectoryExact -Source (Join-Path $Paths.WorkspaceRoot "apps\reader-agent\dist") -Destination (Join-Path $readerRoot "app")
   Write-AppModulePackageJson -AppRoot (Join-Path $readerRoot "app")
@@ -485,5 +497,6 @@ function Build-LiteDeployBundle {
   Copy-SharedTypesVendor -Paths $Paths -VendorRoot $vendorRoot
   Copy-ReaderLauncher -Paths $Paths -ReaderRoot $readerRoot -IncludeLiteInstaller
 
+  Write-Host "Removing machine-local files from lite bundle..."
   Remove-MachineLocalFiles -BundleRoot $BundleRoot
 }
